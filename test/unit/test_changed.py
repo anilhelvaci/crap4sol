@@ -10,8 +10,10 @@ Contract (crap4sol.selection):
       §5 exclusions; absolute, resolved, deduped, sorted. git failure -> AnalysisError.
 """
 
+import errno
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -224,8 +226,10 @@ def test_parse_drops_unmerged_entries_with_a_deletion(code):
 def _mkdir_or_skip(path: Path) -> None:
     try:
         path.mkdir()
-    except OSError as exc:  # e.g. macOS APFS rejects non-UTF-8 names
-        pytest.skip(f"filesystem rejects non-UTF-8 name: {exc}")
+    except OSError as exc:  # macOS APFS rejects non-UTF-8 names (EILSEQ)
+        if sys.platform == "darwin" or exc.errno == errno.EILSEQ:
+            pytest.skip(f"filesystem rejects non-UTF-8 name: {exc}")
+        raise
 
 
 def _non_utf8(base: Path, name: bytes) -> Path:

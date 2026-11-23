@@ -138,7 +138,8 @@ def test_group_values_are_resolved(root):
 
 def test_group_dedupes_same_file_spelled_differently(root):
     touch(root, "src/A.sol")
-    got = group_by_module([root / "src/A.sol", root / "src/./A.sol", root / "x/../src/A.sol"], root)
+    (root / "alias").symlink_to(root / "src")
+    got = group_by_module([root / "src/A.sol", root / "alias/A.sol", root / "x/../src/A.sol"], root)
     assert got == {root: [root / "src/A.sol"]}
 
 
