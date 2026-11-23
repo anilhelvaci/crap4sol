@@ -489,6 +489,7 @@ def test_deleted_cwd_exits_three(tmp_path, monkeypatch, capsys):
     assert call([], **rec.kw) == 3
     out, err = capsys.readouterr()
     assert err.startswith("crap4sol: ")
+    assert "unexpected error" not in err  # an I/O failure, not an internal crash
     assert out == ""
     assert rec.log == []
 
@@ -517,6 +518,53 @@ def test_failure_in_second_module_prints_no_table(two_modules, capsys):
         cov_error={pkg: AnalysisError("forge coverage failed in pkg")},
     )
     assert call([".", "pkg"], **rec.kw) == 3
+    # module order is sorted: root analyzed fully before pkg failed
+    assert rec.log == [
+        ("coverage", root),
+        ("collect", root, [root / "src" / "A.sol"]),
+        ("coverage", pkg),
+    ]
     out, err = capsys.readouterr()
     assert out == ""
     assert "forge coverage failed in pkg" in err
+
+
+# --- review follow-ups 3: failures while reporting ---------------------------------------
+
+
+def test_render_crash_exits_three(project, monkeypatch, capsys):
+    def boom(metrics):
+        raise ValueError("bad cell")
+
+    monkeypatch.setattr("crap4sol.report.render", boom)
+    rec = Recorder(callables={project: [fn("A", "f()", 1)]})
+    assert call([], **rec.kw) == 3
+    out, err = capsys.readouterr()
+    assert "bad cell" in err
+    assert "Traceback" not in err
+    assert out == ""
+
+
+class _BrokenStdout:
+    """stdout whose reader went away (`crap4sol | head -c0`)."""
+
+    def write(self, s):
+        raise BrokenPipeError(32, "Broken pipe")
+
+    def flush(self):
+        raise BrokenPipeError(32, "Broken pipe")
+
+
+def test_broken_pipe_on_stdout_exits_three(project, monkeypatch, capsys):
+    rec = Recorder(callables={project: [fn("A", "f()", 1)]})
+    monkeypatch.setattr("sys.stdout", _BrokenStdout())
+    assert call([], **rec.kw) == 3
+    assert "Broken pipe" in capsys.readouterr().err
+
+
+def test_broken_pipe_beats_threshold_exit(project, monkeypatch):
+    # report could not be written: analysis output failed, exit 3 not 2
+    c = fn("A", "f()", 3, start=1, end=3)
+    rec = Recorder(reports={project: {"src/A.sol": cov(l2=0)}}, callables={project: [c]})
+    monkeypatch.setattr("sys.stdout", _BrokenStdout())
+    assert call([], **rec.kw) == 3
