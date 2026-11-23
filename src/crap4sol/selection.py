@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from crap4sol.errors import AnalysisError
@@ -41,7 +42,8 @@ def select_default(project_root: Path) -> list[Path]:
 
 def select_paths(project_root: Path, paths: list[str]) -> list[Path]:
     """Files are taken directly; directories expand to `.sol` under `<dir>/src/**`.
-    Relative paths resolve against the project root. Deduped, sorted, exclusions applied."""
+    Relative paths resolve against the project root. Deduped, sorted, exclusions applied.
+    Each nonexistent path warns on stderr and is skipped."""
     root = project_root.resolve()
     files: list[Path] = []
     for raw in paths:
@@ -50,6 +52,8 @@ def select_paths(project_root: Path, paths: list[str]) -> list[Path]:
             files.extend(_sol_under_src(p))
         elif p.is_file():
             files.append(p)
+        elif not p.exists():
+            print(f"Warning: path does not exist: {raw}", file=sys.stderr)
     return _finalize(root, files)
 
 
