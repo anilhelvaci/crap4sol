@@ -1,6 +1,7 @@
 """Command-line entry point (spec §4-§14)."""
 
 import argparse
+import os
 import sys
 from collections.abc import Callable as Fn
 from pathlib import Path
@@ -62,6 +63,26 @@ def _analyze(
     return metrics
 
 
+def _emit(text: str) -> None:
+    """Write to stdout and flush, so a broken pipe surfaces here rather than at exit."""
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
+def _silence_stdout() -> None:
+    """Point the stdout fd at devnull so the interpreter's exit flush doesn't raise again
+    (Python docs, signal module: note on SIGPIPE)."""
+    try:
+        fd = sys.stdout.fileno()
+    except (AttributeError, OSError, ValueError):  # not backed by a real fd
+        return
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    try:
+        os.dup2(devnull, fd)
+    finally:
+        os.close(devnull)
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -85,7 +106,7 @@ def main(
         root = Path.cwd().resolve()
         files = _select(root, args)
         if not files:
-            print(EMPTY_MSG)
+            _emit(EMPTY_MSG + "\n")
             return EXIT_SUCCESS
         metrics = _analyze(
             root,
@@ -93,6 +114,11 @@ def main(
             run_coverage or forge.run_coverage,
             collect_callables or callables.collect_callables,
         )
+        _emit(report.render(report.sort_metrics(metrics)))
+    except BrokenPipeError as exc:  # stdout reader went away: the report was not delivered
+        _silence_stdout()
+        print(f"crap4sol: cannot write report: {exc}", file=sys.stderr)
+        return EXIT_ANALYSIS_FAILURE
     except (AnalysisError, OSError) as exc:
         print(f"crap4sol: {exc}", file=sys.stderr)
         return EXIT_ANALYSIS_FAILURE
@@ -100,5 +126,4 @@ def main(
         print(f"crap4sol: unexpected error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return EXIT_ANALYSIS_FAILURE
 
-    sys.stdout.write(report.render(report.sort_metrics(metrics)))
     return report.check_threshold(metrics, sys.stderr)
