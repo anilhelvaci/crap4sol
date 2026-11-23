@@ -9,9 +9,10 @@ from slither.core.declarations.function import FunctionType
 from slither.utils.code_complexity import compute_cyclomatic_complexity
 
 from crap4sol.errors import AnalysisError
+from crap4sol.lcov import normalize_sf
 from crap4sol.metrics import Callable, Kind, clamp_cc
 
-_SYNTHESIZED_PREFIX = "slitherConstructor"
+_SYNTHESIZED = (FunctionType.CONSTRUCTOR_VARIABLES, FunctionType.CONSTRUCTOR_CONSTANT_VARIABLES)
 
 
 def _load_slither(root: Path):
@@ -54,12 +55,15 @@ def collect_callables(module_root: Path, files: Iterable[Path]) -> list[Callable
 
     out: dict[tuple, Callable] = {}
     for fn, contract in _candidates(slither):
-        if not fn.is_implemented or fn.name.startswith(_SYNTHESIZED_PREFIX):
+        if not fn.is_implemented or fn.function_type in _SYNTHESIZED:
             continue
-        path = Path(fn.source_mapping.filename.absolute).resolve()
-        if path not in selected:
+        abspath = fn.source_mapping.filename.absolute
+        if Path(abspath).resolve() not in selected:
             continue
-        rel = path.relative_to(root.resolve()).as_posix()
+        # key by the in-module path Slither saw (not the symlink target): same as LCOV SF
+        rel = normalize_sf(abspath, root)
+        if Path(rel).is_absolute():
+            raise AnalysisError(f"{abspath}: source file outside module {root}")
         lines = fn.source_mapping.lines
         c = Callable(
             contract=contract if contract is not None else rel,
