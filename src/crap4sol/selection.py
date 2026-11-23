@@ -119,7 +119,7 @@ def select_changed(project_root: Path) -> list[Path]:
     """Changed (modified/added/untracked) `.sol` files under `<project_root>/src/` per
     `git status --porcelain`, minus exclusions; absolute, deduped, sorted."""
     root = project_root.resolve()
-    top = Path(_git(root, "rev-parse", "--show-toplevel").strip()).resolve()
+    top = Path(_git(root, "rev-parse", "--show-toplevel").removesuffix("\n")).resolve()
     status = _git(root, "-c", "core.quotePath=true", "status", "--porcelain", "-uall")
     src = root / "src"
     files = [(top / rel).resolve() for rel in parse_porcelain(status)]

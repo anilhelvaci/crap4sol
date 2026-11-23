@@ -20,8 +20,8 @@ def module_root(file: Path, project_root: Path) -> Path:
 
 
 def group_by_module(files: list[Path], project_root: Path) -> dict[Path, list[Path]]:
-    """Files grouped by module root; keys sorted, files sorted within each group."""
-    groups: dict[Path, list[Path]] = {}
+    """Files (resolved, deduped) grouped by module root; keys sorted, files sorted per group."""
+    groups: dict[Path, set[Path]] = {}
     for f in files:
-        groups.setdefault(module_root(f, project_root), []).append(f)
+        groups.setdefault(module_root(f, project_root), set()).add(f.resolve())
     return {k: sorted(groups[k]) for k in sorted(groups)}
