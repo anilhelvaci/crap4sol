@@ -604,3 +604,54 @@ def test_broken_stdout_and_stderr_exits_three(project, monkeypatch):
     monkeypatch.setattr("sys.stdout", _BrokenStdout())
     monkeypatch.setattr("sys.stderr", _BrokenStderr())
     assert call([], **rec.kw) == 3
+
+
+# --- review round 5: closed fds (sys.stdout / sys.stderr is None) ----------------------
+
+
+def test_stdout_none_exits_three(project, monkeypatch):
+    # `crap4sol >&-`: Python sets sys.stdout to None
+    rec = Recorder(callables={project: [fn("A", "f()", 1)]})
+    monkeypatch.setattr("sys.stdout", None)
+    assert call([], **rec.kw) == 3
+
+
+def test_stdout_none_empty_selection_exits_three(empty_project, monkeypatch):
+    monkeypatch.setattr("sys.stdout", None)
+    assert call([], **Recorder().kw) == 3
+
+
+def test_stderr_none_analysis_error_exits_three(project, monkeypatch):
+    # `crap4sol 2>&-`
+    rec = Recorder(cov_error={project: AnalysisError("boom")})
+    monkeypatch.setattr("sys.stderr", None)
+    assert call([], **rec.kw) == 3
+
+
+def test_stderr_none_threshold_exits_two(project, monkeypatch):
+    c = fn("A", "f()", 3, start=1, end=3)
+    rec = Recorder(reports={project: {"src/A.sol": cov(l2=0)}}, callables={project: [c]})
+    monkeypatch.setattr("sys.stderr", None)
+    assert call([], **rec.kw) == 2
+
+
+@pytest.mark.parametrize(
+    "argv", [["--bogus"], ["--changed", "src/A.sol"], ["--coverage", "branch"]]
+)
+def test_usage_error_with_broken_stderr_exits_one(project, monkeypatch, argv):
+    monkeypatch.setattr("sys.stderr", _BrokenStderr())
+    assert call(argv, **Recorder().kw) == 1
+
+
+@pytest.mark.parametrize(
+    "argv", [["--bogus"], ["--changed", "src/A.sol"], ["--coverage", "branch"]]
+)
+def test_usage_error_with_stderr_none_exits_one(project, monkeypatch, argv):
+    monkeypatch.setattr("sys.stderr", None)
+    assert call(argv, **Recorder().kw) == 1
+
+
+def test_help_with_broken_stdout_exits_three(project, monkeypatch):
+    # help text could not be delivered: same rule as the report (stdout not writable -> 3)
+    monkeypatch.setattr("sys.stdout", _BrokenStdout())
+    assert call(["--help"], **Recorder().kw) == 3

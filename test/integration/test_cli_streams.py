@@ -88,3 +88,46 @@ def test_healthy_streams_empty_selection_exits_zero(empty_dir):
     proc = subprocess.run([_script()], cwd=empty_dir, capture_output=True, text=True)
     assert proc.returncode == 0
     assert proc.stdout == "No Solidity files to analyze.\n"
+
+
+# --- review round 5: fds closed at start ------------------------------------------------
+
+
+def _sh(cmd: str, cwd, **env):
+    """Run `crap4sol` through sh so redirections like `>&-` close fds before exec."""
+    e = {**os.environ, **env}
+    return subprocess.run(
+        ["sh", "-c", cmd.replace("crap4sol", f'"{_script()}"', 1)],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        env=e,
+    )
+
+
+def test_stdout_closed_fd_exits_three(empty_dir):
+    proc = _sh("crap4sol >&-", empty_dir)
+    assert proc.returncode == 3, proc.stderr
+    assert "Traceback" not in proc.stderr
+
+
+def test_stderr_closed_fd_analysis_error_exits_three(empty_dir):
+    # --changed outside a git repo -> analysis failure, with fd 2 closed
+    (empty_dir / "src").mkdir()
+    (empty_dir / "src" / "A.sol").write_text("// x\n")
+    proc = _sh(
+        "crap4sol --changed 2>&-", empty_dir, GIT_CEILING_DIRECTORIES=str(empty_dir.parent)
+    )
+    assert proc.returncode == 3
+
+
+def test_help_into_closed_pipe_exits_three(empty_dir):
+    w = _closed_pipe_fd()
+    try:
+        proc = subprocess.run(
+            [_script(), "--help"], cwd=empty_dir, stdout=w, stderr=subprocess.PIPE, text=True
+        )
+    finally:
+        os.close(w)
+    assert proc.returncode == 3, proc.stderr
+    assert "Exception ignored" not in proc.stderr
