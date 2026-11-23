@@ -1,5 +1,6 @@
 """Report table (spec §11) and CRAP threshold check (spec §12)."""
 
+import math
 from typing import TextIO
 
 from crap4sol.errors import EXIT_SUCCESS, EXIT_THRESHOLD_EXCEEDED
@@ -17,15 +18,23 @@ def sort_metrics(metrics: list[Metric]) -> list[Metric]:
 
     def key(m: Metric):
         is_na = m.crap is None
-        return (is_na, 0.0 if is_na else -m.crap, m.callable.contract, m.callable.signature)
+        c = m.callable
+        return (is_na, 0.0 if is_na else -m.crap, c.contract, c.signature, c.file, c.start_line)
 
     return sorted(metrics, key=key)
 
 
+def _round_to(x: float, digits: int, rounder) -> float:
+    """Round x to `digits` decimals with ceil/floor, ignoring binary float noise (1.1 stays 1.1)."""
+    scale = 10**digits
+    return rounder(round(x * scale, 6)) / scale
+
+
 def _cells(m: Metric) -> tuple[str, ...]:
     c = m.callable
-    cov = _NA if m.coverage is None else f"{m.coverage * 100:.1f}%"
-    crap = _NA if m.crap is None else f"{m.crap:.2f}"
+    # Display never flatters: coverage rounds down, CRAP rounds up.
+    cov = _NA if m.coverage is None else f"{_round_to(m.coverage * 100, 1, math.floor):.1f}%"
+    crap = _NA if m.crap is None else f"{_round_to(m.crap, 2, math.ceil):.2f}"
     return (c.signature, c.contract, c.kind.value, str(c.cc), cov, crap)
 
 
