@@ -198,3 +198,25 @@ def test_normalize_report_sums_hits_when_abs_and_rel_sf_collide(tmp_path):
 def test_normalize_report_keeps_distinct_files_apart(tmp_path):
     report = {"src/A.sol": FileCoverage(lines={1: 1}), "src/B.sol": FileCoverage(lines={1: 0})}
     assert normalize_report(report, tmp_path) == report
+
+
+# --- review follow-ups on be1ffaf: I/O errors are analysis failures (spec §13, §14) ---
+
+
+def test_load_lcov_non_utf8_file_raises_analysis_error(tmp_path):
+    p = tmp_path / "lcov.info"
+    p.write_bytes(b"SF:src/A.sol\nDA:1,1\n\xff\xfe\nend_of_record\n")
+    with pytest.raises(AnalysisError, match=str(p)):
+        load_lcov(p)
+
+
+def test_load_lcov_read_oserror_raises_analysis_error(tmp_path, monkeypatch):
+    p = tmp_path / "lcov.info"
+    p.write_text("SF:src/A.sol\nDA:1,1\nend_of_record\n")
+
+    def boom(*args, **kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(type(p), "read_text", boom)
+    with pytest.raises(AnalysisError, match=str(p)):
+        load_lcov(p)

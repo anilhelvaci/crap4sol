@@ -138,3 +138,64 @@ def test_check_threshold_message_keeps_max_precision():
 
 def test_check_threshold_with_only_na_is_not_exceeded():
     assert check_threshold([na()], io.StringIO()) == EXIT_SUCCESS
+
+
+# --- review follow-ups on be1ffaf ---
+
+
+def crap_cell(row):
+    return render([row]).splitlines()[2].split()[-1]
+
+
+def cov_cell(row):
+    return render([row]).splitlines()[2].split()[-2]
+
+
+def test_sort_puts_na_after_zero_crap_row():
+    out = sort_metrics([na(signature="a()"), m(signature="b()", crap=0.0)])
+    assert keys(out) == [("Vault", "b()"), ("Vault", "a()")]
+
+
+def _at(file, start, crap=3.0):
+    c = Callable("Vault", "f()", Kind.FUNCTION, file, start, start + 1, 1)
+    return Metric(c, 1.0, crap)
+
+
+def test_sort_breaks_signature_ties_by_file():
+    out = sort_metrics([_at("src/b/Vault.sol", 1), _at("src/a/Vault.sol", 1)])
+    assert [x.callable.file for x in out] == ["src/a/Vault.sol", "src/b/Vault.sol"]
+
+
+def test_sort_breaks_file_ties_by_start_line():
+    out = sort_metrics([_at("src/Vault.sol", 30), _at("src/Vault.sol", 5)])
+    assert [x.callable.start_line for x in out] == [5, 30]
+
+
+def test_check_threshold_finds_worst_row_not_in_first_place():
+    err = io.StringIO()
+    code = check_threshold([m(crap=1.0), m(crap=2.0), m(crap=9.5)], err)
+    assert (code, err.getvalue()) == (EXIT_THRESHOLD_EXCEEDED, "CRAP threshold exceeded: 9.5 > 8.0\n")
+
+
+def test_render_crap_just_over_threshold_does_not_display_as_threshold():
+    assert crap_cell(m(crap=8.004)) == "8.01"
+
+
+def test_render_crap_rounds_up_to_two_decimals():
+    assert crap_cell(m(crap=2.001)) == "2.01"
+
+
+def test_render_crap_exact_two_decimal_value_is_unchanged():
+    assert crap_cell(m(crap=1.1)) == "1.10"
+
+
+def test_render_coverage_just_below_full_does_not_display_as_full():
+    assert cov_cell(m(coverage=0.9996)) == "99.9%"
+
+
+def test_render_coverage_exact_one_decimal_value_is_unchanged():
+    assert cov_cell(m(coverage=0.29)) == "29.0%"
+
+
+def test_render_full_coverage_is_hundred_percent():
+    assert cov_cell(m(coverage=1.0)) == "100.0%"
