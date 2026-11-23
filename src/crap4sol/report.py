@@ -38,11 +38,20 @@ def _round_to(x: float, digits: int, rounding: str, scale: int = 1) -> str:
     return str(value.quantize(Decimal(1).scaleb(-digits), rounding=rounding))
 
 
+def _format_crap(value: float) -> str:
+    """CRAP rounded up to 2dp; a value that fails the gate never displays at/below it."""
+    cell = _round_to(value, 2, ROUND_CEILING)
+    threshold = Decimal(repr(THRESHOLD))
+    if value > THRESHOLD and Decimal(cell) <= threshold:
+        cell = str(threshold.quantize(Decimal("0.01")) + Decimal("0.01"))
+    return cell
+
+
 def _cells(m: Metric) -> tuple[str, ...]:
     c = m.callable
     # Display never flatters: coverage rounds down, CRAP rounds up.
     cov = _NA if m.coverage is None else f"{_round_to(m.coverage, 1, ROUND_FLOOR, scale=100)}%"
-    crap = _NA if m.crap is None else _round_to(m.crap, 2, ROUND_CEILING)
+    crap = _NA if m.crap is None else _format_crap(m.crap)
     return (c.signature, c.contract, c.kind.value, str(c.cc), cov, crap)
 
 
