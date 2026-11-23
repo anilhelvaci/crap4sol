@@ -29,8 +29,9 @@ CollectFn = Fn[[Path, list[Path]], list[Callable]]
 class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
         """Usage errors exit 1 (spec §13), not argparse's default 2."""
-        self.print_usage(sys.stderr)
-        self.exit(EXIT_USAGE, f"{self.prog}: error: {message}\n")
+        _err(self.format_usage().rstrip("\n"))
+        _err(f"{self.prog}: error: {message}")
+        sys.exit(EXIT_USAGE)
 
 
 def _parser() -> _Parser:
@@ -63,17 +64,11 @@ def _analyze(
     return metrics
 
 
-def _emit(text: str) -> None:
-    """Write to stdout and flush, so a broken pipe surfaces here rather than at exit."""
-    sys.stdout.write(text)
-    sys.stdout.flush()
-
-
-def _silence_stdout() -> None:
-    """Point the stdout fd at devnull so the interpreter's exit flush doesn't raise again
+def _silence(stream) -> None:
+    """Point the stream's fd at devnull so the interpreter's exit flush doesn't raise again
     (Python docs, signal module: note on SIGPIPE)."""
     try:
-        fd = sys.stdout.fileno()
+        fd = stream.fileno()
     except (AttributeError, OSError, ValueError):  # not backed by a real fd
         return
     devnull = os.open(os.devnull, os.O_WRONLY)
@@ -81,6 +76,29 @@ def _silence_stdout() -> None:
         os.dup2(devnull, fd)
     finally:
         os.close(devnull)
+
+
+def _emit(text: str) -> None:
+    """Write to stdout and flush, so a write failure surfaces here rather than at exit."""
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
+class _Stderr:
+    """stderr that never raises: a diagnostic that cannot be written must not change the
+    exit code (e.g. `crap4sol 2>&1 | head -c0`)."""
+
+    def write(self, text: str) -> int:
+        try:
+            sys.stderr.write(text)
+            sys.stderr.flush()
+        except OSError:
+            _silence(sys.stderr)
+        return len(text)
+
+
+def _err(message: str) -> None:
+    _Stderr().write(f"{message}\n")
 
 
 def main(
@@ -95,35 +113,39 @@ def main(
     except SystemExit as exc:  # --help (0) or usage error (1)
         return exc.code if isinstance(exc.code, int) else EXIT_USAGE
     if args.changed and args.paths:
-        parser.print_usage(sys.stderr)
-        print("crap4sol: error: --changed takes no paths", file=sys.stderr)
+        _err(parser.format_usage().rstrip("\n"))
+        _err("crap4sol: error: --changed takes no paths")
         return EXIT_USAGE
     if args.coverage == "branch":
-        print(BRANCH_MSG, file=sys.stderr)
+        _err(BRANCH_MSG)
         return EXIT_USAGE
 
     try:
         root = Path.cwd().resolve()
         files = _select(root, args)
-        if not files:
-            _emit(EMPTY_MSG + "\n")
-            return EXIT_SUCCESS
-        metrics = _analyze(
-            root,
-            files,
-            run_coverage or forge.run_coverage,
-            collect_callables or callables.collect_callables,
-        )
-        _emit(report.render(report.sort_metrics(metrics)))
-    except BrokenPipeError as exc:  # stdout reader went away: the report was not delivered
-        _silence_stdout()
-        print(f"crap4sol: cannot write report: {exc}", file=sys.stderr)
-        return EXIT_ANALYSIS_FAILURE
+        metrics: list[Metric] = []
+        if files:
+            metrics = _analyze(
+                root,
+                files,
+                run_coverage or forge.run_coverage,
+                collect_callables or callables.collect_callables,
+            )
+            text = report.render(report.sort_metrics(metrics))
+        else:
+            text = EMPTY_MSG + "\n"
     except (AnalysisError, OSError) as exc:
-        print(f"crap4sol: {exc}", file=sys.stderr)
+        _err(f"crap4sol: {exc}")
         return EXIT_ANALYSIS_FAILURE
     except Exception as exc:  # analyzer crash or unresolvable path: never exit 1 (usage)
-        print(f"crap4sol: unexpected error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        _err(f"crap4sol: unexpected error: {type(exc).__name__}: {exc}")
         return EXIT_ANALYSIS_FAILURE
 
-    return report.check_threshold(metrics, sys.stderr)
+    try:
+        _emit(text)
+    except OSError as exc:  # closed pipe, full disk: the output was not delivered
+        _silence(sys.stdout)
+        _err(f"crap4sol: cannot write report: {exc}")
+        return EXIT_ANALYSIS_FAILURE
+
+    return report.check_threshold(metrics, _Stderr())
