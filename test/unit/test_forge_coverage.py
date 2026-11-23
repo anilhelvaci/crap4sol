@@ -7,6 +7,7 @@ API under test: crap4sol.forge.run_coverage(module_root, runner=None)
 (like subprocess.CompletedProcess). The default runner calls subprocess.
 """
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -184,11 +185,104 @@ def test_present_lcov_emits_no_warning(module, capsys):
     assert capsys.readouterr().err == ""
 
 
-def test_forge_stdout_not_leaked_to_stdout(module, capsys):
+STUB_FORGE = """#!/bin/sh
+echo "Ran 3 tests (stub stdout)"
+echo "stub stderr chatter" >&2
+while [ $# -gt 0 ]; do
+  if [ "$1" = "--report-file" ]; then shift; printf 'SF:src/A.sol\\nDA:3,1\\nend_of_record\\n' > "$1"; fi
+  shift
+done
+exit 0
+"""
+
+
+@pytest.fixture
+def stub_forge(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    forge = bin_dir / "forge"
+    forge.write_text(STUB_FORGE)
+    forge.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    return forge
+
+
+def test_default_runner_uses_forge_on_path(module, stub_forge):
+    report = run_coverage(module)
+    assert report == {"src/A.sol": FileCoverage(lines={3: 1})}
+
+
+def test_forge_stdout_not_leaked_to_stdout(module, stub_forge, capfd):
     # the report table owns stdout; forge's chatter must not interleave with it
-    fake = FakeRunner(lcov_text=LCOV.format(sf="src/A.sol"), stdout="Ran 3 tests")
-    run_coverage(module, runner=fake)
-    assert "Ran 3 tests" not in capsys.readouterr().out
+    run_coverage(module)
+    assert "Ran 3 tests" not in capfd.readouterr().out
+
+
+def test_forge_stderr_not_leaked_on_success(module, stub_forge, capfd):
+    run_coverage(module)
+    assert "stub stderr chatter" not in capfd.readouterr().err
+
+
+# --- review follow-ups ------------------------------------------------------------------
+
+
+def test_relative_module_root_reads_report_forge_wrote(tmp_path, module, monkeypatch):
+    # forge runs with cwd=module and resolves a relative --report-file against that cwd
+    class CwdRunner(FakeRunner):
+        def __call__(self, argv, cwd):
+            self.calls.append((list(argv), Path(cwd)))
+            report = Path(cwd) / argv[argv.index("--report-file") + 1]
+            report.write_text(self.lcov_text)
+            return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.chdir(tmp_path)
+    fake = CwdRunner(lcov_text=LCOV.format(sf="src/A.sol"))
+    report = run_coverage(Path("mod"), runner=fake)
+    assert report == {"src/A.sol": FileCoverage(lines={3: 1, 4: 0})}
+
+
+def test_relative_module_root_deletes_stale_lcov(tmp_path, module, monkeypatch):
+    (module / "lcov.info").write_text(LCOV.format(sf="src/Stale.sol"))
+    monkeypatch.chdir(tmp_path)
+    fake = FakeRunner(returncode=1)
+    with pytest.raises(AnalysisError):
+        run_coverage(Path("mod"), runner=fake)
+    assert not (module / "lcov.info").exists()
+
+
+def test_bytes_stderr_decoded_in_error(module):
+    fake = FakeRunner(returncode=1, stderr=b"\xff boom")
+    with pytest.raises(AnalysisError) as ei:
+        run_coverage(module, runner=fake)
+    msg = str(ei.value)
+    assert "boom" in msg
+    assert "b'" not in msg
+
+
+def test_failing_tests_reported_on_stdout_appear_in_error(module):
+    # forge prints failing tests on stdout and may leave stderr empty
+    fake = FakeRunner(returncode=1, stdout="[FAIL: assertion failed] test_x() (gas: 1)", stderr="")
+    with pytest.raises(AnalysisError) as ei:
+        run_coverage(module, runner=fake)
+    assert "[FAIL: assertion failed] test_x()" in str(ei.value)
+
+
+def test_undeletable_stale_lcov_raises_before_running(module):
+    (module / "lcov.info").mkdir()
+    fake = FakeRunner(lcov_text=LCOV.format(sf="src/A.sol"))
+    with pytest.raises(AnalysisError):
+        run_coverage(module, runner=fake)
+    assert fake.calls == []
+
+
+def test_runner_oserror_message_names_forge_and_module(module):
+    def missing(argv, cwd):
+        raise FileNotFoundError(2, "No such file or directory", "forge")
+
+    with pytest.raises(AnalysisError) as ei:
+        run_coverage(module, runner=missing)
+    assert "forge coverage" in str(ei.value)
+    assert str(module) in str(ei.value)
 
 
 def test_malformed_lcov_raises_analysis_error(module):
