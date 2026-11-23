@@ -1,6 +1,6 @@
 """Report table (spec §11) and CRAP threshold check (spec §12)."""
 
-from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_EVEN, Decimal
 from typing import TextIO
 
 from crap4sol.errors import EXIT_SUCCESS, EXIT_THRESHOLD_EXCEEDED
@@ -24,13 +24,17 @@ def sort_metrics(metrics: list[Metric]) -> list[Metric]:
     return sorted(metrics, key=key)
 
 
+_SNAP = Decimal("1e-9")
+
+
 def _round_to(x: float, digits: int, rounding: str, scale: int = 1) -> str:
     """Format x*scale to `digits` decimals with directed rounding.
 
-    Decimal(repr(x)) uses the shortest round-trip form, so 1.1 stays 1.10 while a value
-    a hair above/below a step still moves away from it.
+    The scaled value is first snapped to 1e-9 (half-even) so float noise from the formula
+    (6.6000000000000005) isn't bumped a step, while a deliberate offset of 1e-9 or more
+    still moves away from the step.
     """
-    value = Decimal(repr(x)) * scale
+    value = (Decimal(repr(x)) * scale).quantize(_SNAP, rounding=ROUND_HALF_EVEN)
     return str(value.quantize(Decimal(1).scaleb(-digits), rounding=rounding))
 
 
