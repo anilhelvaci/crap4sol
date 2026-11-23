@@ -3,7 +3,13 @@
 import pytest
 
 from crap4sol.errors import AnalysisError
-from crap4sol.lcov import FileCoverage, load_lcov, normalize_sf, parse_lcov
+from crap4sol.lcov import (
+    FileCoverage,
+    load_lcov,
+    normalize_report,
+    normalize_sf,
+    parse_lcov,
+)
 
 SAMPLE = """\
 TN:
@@ -142,3 +148,53 @@ def test_normalize_collapses_dotdot_in_absolute_sf(tmp_path):
 
 def test_normalize_collapses_dotdot_in_relative_sf(tmp_path):
     assert normalize_sf("lib/../src/A.sol", tmp_path) == "src/A.sol"
+
+
+# --- review follow-ups on 53f68b2 ---
+
+
+def test_parse_da_without_hits_field_raises_analysis_error():
+    with pytest.raises(AnalysisError, match="DA:10"):
+        parse_lcov("SF:src/A.sol\nDA:10\nend_of_record\n")
+
+
+def test_parse_da_negative_hits_raises_analysis_error():
+    with pytest.raises(AnalysisError, match="DA:5,-3"):
+        parse_lcov("SF:src/A.sol\nDA:5,3\nDA:5,-3\nend_of_record\n")
+
+
+def test_parse_da_line_zero_raises_analysis_error():
+    with pytest.raises(AnalysisError, match="DA:0,1"):
+        parse_lcov("SF:src/A.sol\nDA:0,1\nend_of_record\n")
+
+
+def test_parse_malformed_da_error_names_sf():
+    with pytest.raises(AnalysisError, match="src/A.sol"):
+        parse_lcov("SF:src/A.sol\nDA:x,1\nend_of_record\n")
+
+
+def test_load_lcov_malformed_da_error_names_lcov_path(tmp_path):
+    p = tmp_path / "lcov.info"
+    p.write_text("SF:src/A.sol\nDA:x,1\nend_of_record\n")
+    with pytest.raises(AnalysisError, match=str(p)):
+        load_lcov(p)
+
+
+def test_normalize_report_rekeys_absolute_sf_to_module_relative(tmp_path):
+    report = {str(tmp_path / "src/A.sol"): FileCoverage(lines={5: 1})}
+    assert normalize_report(report, tmp_path) == {"src/A.sol": FileCoverage(lines={5: 1})}
+
+
+def test_normalize_report_sums_hits_when_abs_and_rel_sf_collide(tmp_path):
+    report = {
+        str(tmp_path / "src/A.sol"): FileCoverage(lines={5: 1, 6: 0}, brda=["5,0,0,1"]),
+        "./src/A.sol": FileCoverage(lines={5: 2, 7: 3}, brda=["5,0,1,-"]),
+    }
+    assert normalize_report(report, tmp_path) == {
+        "src/A.sol": FileCoverage(lines={5: 3, 6: 0, 7: 3}, brda=["5,0,0,1", "5,0,1,-"])
+    }
+
+
+def test_normalize_report_keeps_distinct_files_apart(tmp_path):
+    report = {"src/A.sol": FileCoverage(lines={1: 1}), "src/B.sol": FileCoverage(lines={1: 0})}
+    assert normalize_report(report, tmp_path) == report

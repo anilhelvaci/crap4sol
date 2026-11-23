@@ -77,3 +77,7 @@ def test_attribute_no_da_in_range_is_na():
 def test_attribute_without_lcov_report_is_na():
     c = make_callable()
     assert attribute(c, None) == Metric(c, None, None)
+
+
+def test_single_line_range_counts_that_line():
+    assert line_coverage(fc({10: 1, 11: 0}), 10, 10) == pytest.approx(1.0)
