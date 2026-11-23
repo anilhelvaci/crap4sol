@@ -50,10 +50,22 @@ def test_readme_states_branch_coverage_not_implemented(text):
     assert "Branch coverage not implemented yet." in text
 
 
+def _section(text, heading):
+    return text.split(heading, 1)[1].split("\n## ", 1)[0] if heading in text else ""
+
+
 def test_readme_documents_cc_limitations(text):
-    # spec §8.1 known limitations
+    # spec §8.1 known limitations, stated under the Limitations section
+    section = _section(text, "## Limitations")
     for item in ("&&", "||", "require"):
-        assert item in text
+        assert item in section
+
+
+def test_readme_exit_three_covers_unexpected_internal_errors(text):
+    # cli maps any unexpected exception to 3 (never 1, which means usage error)
+    rows = [l for l in _section(text, "## Exit codes").splitlines() if l.startswith("| 3 ")]
+    assert len(rows) == 1
+    assert "unexpected" in rows[0].lower()
 
 
 def test_readme_mentions_via_ir(text):

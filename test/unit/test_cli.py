@@ -474,3 +474,49 @@ def test_unexpected_exception_still_fails_fast(two_modules):
     rec = Recorder(cov_error={root: RuntimeError("x"), pkg: RuntimeError("x")})
     call([".", "pkg"], **rec.kw)
     assert len(rec.log) == 1
+
+
+# --- review follow-ups 2 ---------------------------------------------------------------
+
+
+def test_deleted_cwd_exits_three(tmp_path, monkeypatch, capsys):
+    # cwd removed under us: Path.cwd() raises FileNotFoundError -> I/O failure, not a traceback
+    gone = tmp_path / "gone"
+    gone.mkdir()
+    monkeypatch.chdir(gone)
+    gone.rmdir()
+    rec = Recorder()
+    assert call([], **rec.kw) == 3
+    out, err = capsys.readouterr()
+    assert err.startswith("crap4sol: ")
+    assert out == ""
+    assert rec.log == []
+
+
+def test_selection_runtime_error_exits_three(project, monkeypatch, capsys):
+    # deterministic stand-in for py3.12's Path.resolve RuntimeError on a symlink loop
+    def boom(root, paths):
+        raise RuntimeError("Symlink loop from 'src/Loop.sol'")
+
+    monkeypatch.setattr("crap4sol.selection.select_paths", boom)
+    rec = Recorder()
+    assert call(["src/Loop.sol"], **rec.kw) == 3
+    out, err = capsys.readouterr()
+    assert "Symlink loop from 'src/Loop.sol'" in err
+    assert out == ""
+    assert rec.log == []
+
+
+def test_failure_in_second_module_prints_no_table(two_modules, capsys):
+    # first module analyzed fine, second fails: no partial report
+    root, pkg = two_modules
+    ok = fn("A", "f()", 1, file="src/A.sol", start=1, end=3)
+    rec = Recorder(
+        reports={root: {"src/A.sol": cov(l2=1)}},
+        callables={root: [ok]},
+        cov_error={pkg: AnalysisError("forge coverage failed in pkg")},
+    )
+    assert call([".", "pkg"], **rec.kw) == 3
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert "forge coverage failed in pkg" in err
