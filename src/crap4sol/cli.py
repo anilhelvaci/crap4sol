@@ -96,6 +96,9 @@ def main(
     except (AnalysisError, OSError) as exc:
         print(f"crap4sol: {exc}", file=sys.stderr)
         return EXIT_ANALYSIS_FAILURE
+    except Exception as exc:  # analyzer crash or unresolvable path: never exit 1 (usage)
+        print(f"crap4sol: unexpected error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return EXIT_ANALYSIS_FAILURE
 
     sys.stdout.write(report.render(report.sort_metrics(metrics)))
     return report.check_threshold(metrics, sys.stderr)
