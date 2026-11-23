@@ -1,7 +1,10 @@
 """LCOV parsing (spec §7.3) and SF path normalization (spec §9.1)."""
 
+import os.path
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from crap4sol.errors import AnalysisError
 
 
 @dataclass
@@ -23,11 +26,20 @@ def parse_lcov(text: str) -> dict[str, FileCoverage]:
         elif current is None:
             continue
         elif line.startswith("DA:"):
-            lineno, hits = line[3:].split(",")[:2]
-            current.lines[int(lineno)] = int(hits)
+            lineno, hits = _parse_da(line)
+            current.lines[lineno] = current.lines.get(lineno, 0) + hits
         elif line.startswith("BRDA:"):
             current.brda.append(line[5:])
     return report
+
+
+def _parse_da(line: str) -> tuple[int, int]:
+    """Parse 'DA:<line>,<hits>[,<checksum>]'; malformed input is an analysis failure."""
+    fields = line[3:].split(",")
+    try:
+        return int(fields[0]), int(fields[1])
+    except (IndexError, ValueError):
+        raise AnalysisError(f"malformed LCOV DA record: {line!r}") from None
 
 
 def load_lcov(path: Path) -> dict[str, FileCoverage] | None:
@@ -43,7 +55,7 @@ def load_lcov(path: Path) -> dict[str, FileCoverage] | None:
 
 def normalize_sf(sf: str, module_root: Path) -> str:
     """Normalize an LCOV SF path to a module-relative POSIX path."""
-    p = Path(sf)
+    p = Path(os.path.normpath(sf))
     if p.is_absolute():
         root = Path(module_root)
         for candidate, base in ((p, root), (p.resolve(), root.resolve())):
