@@ -1,5 +1,7 @@
 """T1.3-T1.5: LCOV parsing (spec §7.3), missing/empty LCOV (§7), SF normalization (§9.1)."""
 
+import re
+
 import pytest
 
 from crap4sol.errors import AnalysisError
@@ -243,5 +245,5 @@ def test_load_lcov_bom_and_whitespace_file_is_none(tmp_path):
 def test_load_lcov_utf16_file_raises_analysis_error(tmp_path):
     p = tmp_path / "lcov.info"
     p.write_bytes("SF:src/A.sol\nDA:1,1\nend_of_record\n".encode("utf-16"))
-    with pytest.raises(AnalysisError, match=str(p)):
+    with pytest.raises(AnalysisError, match=f"cannot read LCOV.*{re.escape(str(p))}|{re.escape(str(p))}.*cannot read LCOV"):
         load_lcov(p)

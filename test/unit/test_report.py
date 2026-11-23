@@ -226,3 +226,16 @@ def test_render_exact_step_crap_from_formula_is_not_bumped(cc, coverage, shown):
 @pytest.mark.parametrize("hit, total, shown", [(29, 100, "29.0%"), (7, 10, "70.0%")])
 def test_render_exact_step_coverage_ratio_is_not_dropped(hit, total, shown):
     assert cov_cell(m(coverage=hit / total)) == shown
+
+
+# --- review on cdbecfe: a row that breaches the gate never displays as <= 8.00 ---
+
+
+def test_render_crap_breaching_threshold_inside_snap_window_shows_above_threshold():
+    value = crap(8, 1 - 1 / 6000)  # 8 + ~3e-10 > THRESHOLD
+    assert value > THRESHOLD
+    assert crap_cell(m(crap=value, cc=8)) == "8.01"
+
+
+def test_render_crap_exactly_at_threshold_shows_threshold():
+    assert crap_cell(m(crap=8.0, cc=8)) == "8.00"
