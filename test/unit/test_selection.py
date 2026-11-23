@@ -232,3 +232,36 @@ def test_explicit_src_dir_expands_to_src_src_only(root):
     # §4: a directory expands to `<dir>/src/**`, so `src` means `src/src/**`.
     touch(root, "src/A.sol")
     assert select_paths(root, ["src"]) == []
+
+
+# --- maintainer: warn on nonexistent explicit paths -------------------------------
+
+
+def test_nonexistent_explicit_path_warns_on_stderr(root, capsys):
+    select_paths(root, ["src/Typo.sol"])
+    assert capsys.readouterr().err == "Warning: path does not exist: src/Typo.sol\n"
+
+
+def test_nonexistent_explicit_path_is_still_not_selected(root, capsys):
+    touch(root, "src/A.sol")
+    assert rels(root, select_paths(root, ["src/Typo.sol", "src/A.sol"])) == ["src/A.sol"]
+
+
+def test_one_warning_per_missing_path_in_input_order(root, capsys):
+    touch(root, "src/A.sol")
+    select_paths(root, ["nope/", "src/A.sol", "src/Gone.sol"])
+    assert capsys.readouterr().err == (
+        "Warning: path does not exist: nope/\n"
+        "Warning: path does not exist: src/Gone.sol\n"
+    )
+
+
+def test_existing_paths_emit_no_warning(root, capsys):
+    touch(root, "src/A.sol", "README.md", "modA/x.txt")
+    select_paths(root, ["src/A.sol", "README.md", "modA", "."])
+    assert capsys.readouterr().err == ""
+
+
+def test_select_paths_prints_nothing_to_stdout_for_missing_path(root, capsys):
+    select_paths(root, ["src/Typo.sol"])
+    assert capsys.readouterr().out == ""
