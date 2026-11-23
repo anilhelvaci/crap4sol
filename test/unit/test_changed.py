@@ -174,10 +174,10 @@ def test_changed_excluded_file_is_not_selected(repo, rel):
 
 
 def test_changed_files_are_sorted_and_absolute(repo):
-    write(repo, "src/Z.sol")
+    # git lists tracked changes before untracked ones: B.sol (modified) precedes A2.sol (untracked).
     write(repo, "src/B.sol", "// changed\n")
-    write(repo, "src/A.sol", "// changed\n")
-    assert select_changed(repo) == [repo / "src/A.sol", repo / "src/B.sol", repo / "src/Z.sol"]
+    write(repo, "src/A2.sol")
+    assert select_changed(repo) == [repo / "src/A2.sol", repo / "src/B.sol"]
 
 
 def test_changed_path_with_space_is_selected(repo):
@@ -205,3 +205,37 @@ def test_not_a_git_repo_raises_analysis_error(tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.resolve()))
     with pytest.raises(AnalysisError):
         select_changed(root)
+
+
+# --- review follow-ups (M2/2) -----------------------------------------------------
+
+
+@pytest.mark.parametrize("code", ["UU", "AA", "AU", "UA", " T", "T "])
+def test_parse_keeps_unmerged_and_typechanged_files(code):
+    # Unmerged (conflicted) and type-changed files still exist and count as modified.
+    assert parse_porcelain(f"{code} src/A.sol\n") == ["src/A.sol"]
+
+
+@pytest.mark.parametrize("code", ["DD", "DU", "UD"])
+def test_parse_drops_unmerged_entries_with_a_deletion(code):
+    assert parse_porcelain(f"{code} src/A.sol\n") == []
+
+
+def test_non_utf8_repo_path_still_selects_changed_files(tmp_path):
+    # Linux paths are bytes; git output under such a root must not crash decoding.
+    root = Path(os.fsdecode(os.fsencode(str(tmp_path.resolve())) + b"/r\xff"))
+    root.mkdir()
+    git(root, "init", "-q")
+    write(root, "src/A.sol")
+    assert select_changed(root) == [root / "src/A.sol"]
+
+
+def test_missing_git_binary_raises_analysis_error(repo, monkeypatch):
+    monkeypatch.setenv("PATH", "")
+    with pytest.raises(AnalysisError):
+        select_changed(repo)
+
+
+def test_nonexistent_project_root_raises_analysis_error(tmp_path):
+    with pytest.raises(AnalysisError):
+        select_changed(tmp_path.resolve() / "nope")
