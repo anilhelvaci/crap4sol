@@ -559,7 +559,7 @@ def test_broken_pipe_on_stdout_exits_three(project, monkeypatch, capsys):
     rec = Recorder(callables={project: [fn("A", "f()", 1)]})
     monkeypatch.setattr("sys.stdout", _BrokenStdout())
     assert call([], **rec.kw) == 3
-    assert "Broken pipe" in capsys.readouterr().err
+    assert "cannot write report" in capsys.readouterr().err
 
 
 def test_broken_pipe_beats_threshold_exit(project, monkeypatch):
@@ -567,4 +567,40 @@ def test_broken_pipe_beats_threshold_exit(project, monkeypatch):
     c = fn("A", "f()", 3, start=1, end=3)
     rec = Recorder(reports={project: {"src/A.sol": cov(l2=0)}}, callables={project: [c]})
     monkeypatch.setattr("sys.stdout", _BrokenStdout())
+    assert call([], **rec.kw) == 3
+
+
+# --- review round 4: broken-pipe handling scoped to report output ----------------------
+
+
+def test_adapter_broken_pipe_is_not_reported_as_report_write_failure(project, capsys):
+    # a BrokenPipe from forge/Slither plumbing is an analysis failure, not "cannot write report"
+    rec = Recorder(collect_error={project: BrokenPipeError(32, "Broken pipe from slither")})
+    assert call([], **rec.kw) == 3
+    err = capsys.readouterr().err
+    assert "Broken pipe from slither" in err
+    assert "cannot write report" not in err
+
+
+class _BrokenStderr(_BrokenStdout):
+    """stderr on a pipe whose reader went away (`crap4sol 2>&1 | head -c0`)."""
+
+
+def test_broken_stderr_on_analysis_error_still_exits_three(project, monkeypatch):
+    rec = Recorder(cov_error={project: AnalysisError("boom")})
+    monkeypatch.setattr("sys.stderr", _BrokenStderr())
+    assert call([], **rec.kw) == 3
+
+
+def test_broken_stderr_on_threshold_still_exits_two(project, monkeypatch):
+    c = fn("A", "f()", 3, start=1, end=3)
+    rec = Recorder(reports={project: {"src/A.sol": cov(l2=0)}}, callables={project: [c]})
+    monkeypatch.setattr("sys.stderr", _BrokenStderr())
+    assert call([], **rec.kw) == 2
+
+
+def test_broken_stdout_and_stderr_exits_three(project, monkeypatch):
+    rec = Recorder(callables={project: [fn("A", "f()", 1)]})
+    monkeypatch.setattr("sys.stdout", _BrokenStdout())
+    monkeypatch.setattr("sys.stderr", _BrokenStderr())
     assert call([], **rec.kw) == 3
