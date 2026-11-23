@@ -28,7 +28,8 @@ def run_coverage(
 ) -> dict[str, FileCoverage] | None:
     """Run `forge coverage` in module_root and return its LCOV report keyed by
     module-relative SF; None (with a stderr warning) if no report was produced."""
-    root = Path(module_root)
+    # absolute so forge (run with cwd=root) writes the report where we read it
+    root = Path(module_root).absolute()
     report_file = root / "lcov.info"
     try:
         report_file.unlink(missing_ok=True)
@@ -41,7 +42,8 @@ def run_coverage(
     except OSError as exc:
         raise AnalysisError(f"forge coverage failed in {root}: {exc}") from exc
     if proc.returncode != 0:
-        err = _text(proc.stderr).strip()
+        # forge reports failing tests on stdout, often with an empty stderr
+        err = _text(proc.stderr).strip() or _text(proc.stdout).strip()
         raise AnalysisError(
             f"forge coverage failed in {root} (exit {proc.returncode}): {err}"
         )
