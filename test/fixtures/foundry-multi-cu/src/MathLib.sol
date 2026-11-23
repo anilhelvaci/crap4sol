@@ -8,3 +8,9 @@ function clamp(uint256 v, uint256 cap) pure returns (uint256 r) {
         r = v;
     }
 }
+
+library Bits {
+    function low(uint256 v) internal pure returns (uint256) {
+        return v & 1;
+    }
+}

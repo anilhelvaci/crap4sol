@@ -300,4 +300,15 @@ def test_multi_cu_collects_each_unit(multi_callables):
         ("Old", "o(uint256)"),
         ("New", "n(uint256)"),
         ("src/MathLib.sol", "clamp(uint256,uint256)"),
+        ("Bits", "low(uint256)"),
     }
+
+
+def test_library_member_is_function_under_library_name(multi_callables):
+    c = one(multi_callables, "Bits", "low(uint256)")
+    assert (c.kind, c.file) == (Kind.FUNCTION, "src/MathLib.sol")
+
+
+def test_contract_seen_by_two_units_one_row(multi_callables):
+    # Bits is compiled into both units; its member must not be reported twice
+    assert [c.signature for c in multi_callables].count("low(uint256)") == 1
