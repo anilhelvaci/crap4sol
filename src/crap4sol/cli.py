@@ -81,8 +81,8 @@ def main(
         print(BRANCH_MSG, file=sys.stderr)
         return EXIT_USAGE
 
-    root = Path.cwd().resolve()
     try:
+        root = Path.cwd().resolve()
         files = _select(root, args)
         if not files:
             print(EMPTY_MSG)
