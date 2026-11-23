@@ -425,3 +425,52 @@ def test_changed_outside_git_repo_exits_three(project, capsys, monkeypatch):
     assert "git" in err
     assert "Traceback" not in err
     assert rec.log == []
+
+
+# --- review follow-ups: exit codes without the call() helper, unexpected failures -------
+
+
+def test_main_returns_one_for_bad_flag_without_raising(project):
+    # console script does sys.exit(main()): main itself must return the code
+    assert main(["--bogus"], **Recorder().kw) == 1
+
+
+def test_main_returns_zero_for_help_without_raising(project):
+    assert main(["--help"], **Recorder().kw) == 0
+
+
+def test_explicit_symlink_loop_path_exits_three(project, capsys):
+    # unreadable source path (spec §14): Path.resolve raises RuntimeError on py3.12
+    (project / "src" / "Loop.sol").symlink_to("Loop.sol")
+    rec = Recorder()
+    assert call(["src/Loop.sol"], **rec.kw) == 3
+    out, err = capsys.readouterr()
+    assert "Loop.sol" in err
+    assert "Traceback" not in err
+    assert out == ""
+    assert rec.log == []
+
+
+def test_unexpected_collector_exception_exits_three(project, capsys):
+    # an analyzer crash (e.g. IndexError on odd Slither source mapping) is an analysis failure,
+    # never exit 1 (which means usage error)
+    rec = Recorder(collect_error={project: IndexError("list index out of range")})
+    assert call([], **rec.kw) == 3
+    out, err = capsys.readouterr()
+    assert "list index out of range" in err
+    assert out == ""
+
+
+def test_unexpected_coverage_exception_exits_three(project, capsys):
+    rec = Recorder(cov_error={project: RuntimeError("weird forge state")})
+    assert call([], **rec.kw) == 3
+    out, err = capsys.readouterr()
+    assert "weird forge state" in err
+    assert out == ""
+
+
+def test_unexpected_exception_still_fails_fast(two_modules):
+    root, pkg = two_modules
+    rec = Recorder(cov_error={root: RuntimeError("x"), pkg: RuntimeError("x")})
+    call([".", "pkg"], **rec.kw)
+    assert len(rec.log) == 1
