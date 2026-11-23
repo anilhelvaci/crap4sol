@@ -184,3 +184,50 @@ def test_explicit_file_and_its_dir_are_deduped(root):
     touch(root, "src/A.sol", "src/B.sol")
     got = select_paths(root, ["src/A.sol", "."])
     assert rels(root, got) == ["src/A.sol", "src/B.sol"]
+
+
+# --- review round 1 -------------------------------------------------------------
+
+
+@pytest.mark.parametrize("rel", ["README.md", "foundry.toml", "src/A.sol.bak"])
+def test_explicit_non_sol_file_is_not_selected(root, rel):
+    touch(root, rel)
+    assert select_paths(root, [rel]) == []
+
+
+def test_explicit_file_outside_project_root_is_not_selected(tmp_path):
+    root = (tmp_path / "proj").resolve()
+    touch(root, "src/A.sol")
+    touch(tmp_path, "other/src/B.sol")
+    assert select_paths(root, [str(tmp_path / "other/src/B.sol")]) == []
+
+
+def test_explicit_dotdot_file_escaping_project_root_is_not_selected(tmp_path):
+    root = (tmp_path / "proj").resolve()
+    touch(tmp_path, "x/lib/A.sol", "x/src/B.sol")
+    assert select_paths(root, ["../x/lib/A.sol", "../x/src/B.sol"]) == []
+
+
+def test_explicit_dir_outside_project_root_selects_nothing(tmp_path):
+    root = (tmp_path / "proj").resolve()
+    touch(tmp_path, "other/src/B.sol")
+    assert select_paths(root, [str(tmp_path / "other")]) == []
+
+
+def test_default_skips_src_symlink_resolving_outside_project_root(tmp_path):
+    root = (tmp_path / "proj").resolve()
+    touch(root, "src/A.sol")
+    touch(tmp_path, "outside/test/Y.sol")
+    (root / "src/ext").symlink_to(tmp_path / "outside")
+    assert rels(root, select_default(root)) == ["src/A.sol"]
+
+
+def test_explicit_excluded_dir_selects_nothing(root):
+    touch(root, "lib/forge-std/src/X.sol")
+    assert select_paths(root, ["lib/forge-std"]) == []
+
+
+def test_explicit_src_dir_expands_to_src_src_only(root):
+    # §4: a directory expands to `<dir>/src/**`, so `src` means `src/src/**`.
+    touch(root, "src/A.sol")
+    assert select_paths(root, ["src"]) == []
