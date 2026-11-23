@@ -116,10 +116,22 @@ def test_default_run_worst_row_is_uncovered_branchy_fn(default_run):
     assert first[4:] == ("0.0%", "30.00")
 
 
-def test_default_run_rows_sorted_crap_descending(default_run):
+def test_default_run_full_row_order(default_run):
+    # CRAP desc, then ties by contract, then signature (spec §11)
     _, out, _ = default_run
-    craps = [float(r[5]) for r in rows(out)]
-    assert craps == sorted(craps, reverse=True)
+    assert [(r[0], r[1]) for r in rows(out)] == [
+        ("classify(uint256)", "Vault"),
+        ("clamp(uint256,uint256)", "src/MathLib.sol"),
+        ("baseHelper()", "Base"),
+        ("fallback()", "Vault"),
+        ("hook()", "Vault"),
+        ("onlyOwner()", "Vault"),
+        ("receive()", "Vault"),
+        ("set(uint256,uint256)", "Vault"),
+        ("constructor()", "Vault"),
+        ("deposit(uint256)", "Vault"),
+        ("set(uint256)", "Vault"),
+    ]
 
 
 def test_default_run_covered_fn_is_low_crap(default_run):
@@ -194,6 +206,84 @@ def test_changed_ignores_changed_test_files(repo, capsys):
     assert capsys.readouterr().out.strip() == "No Solidity files to analyze."
 
 
+def test_changed_includes_untracked_new_file(repo, capsys):
+    (repo / "src" / "Extra.sol").write_text(
+        "// SPDX-License-Identifier: MIT\n"
+        "pragma solidity ^0.8.20;\n"
+        "contract Extra {\n"
+        "    function ping() external pure returns (uint256) { return 1; }\n"
+        "}\n"
+    )
+    assert call(["--changed"]) == 0
+    assert {ident(r) for r in rows(capsys.readouterr().out)} == {
+        ("ping()", "Extra", "function", 1)
+    }
+
+
+# --- nested module --------------------------------------------------------------------
+
+NESTED_SRC = """// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract Counter {
+    uint256 public n;
+
+    function inc() external {
+        n += 1;
+    }
+
+    function pick(uint256 x) external pure returns (uint256 r) {
+        if (x > 1) {
+            r = 2;
+        } else {
+            r = 1;
+        }
+    }
+}
+"""
+
+NESTED_TEST = """// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import {Counter} from "../src/Counter.sol";
+
+contract CounterTest {
+    function test_inc() public {
+        Counter c = new Counter();
+        c.inc();
+        require(c.n() == 1, "n");
+    }
+}
+"""
+
+
+@pytest.fixture
+def nested(sample):
+    pkg = sample / "pkg"
+    (pkg / "src").mkdir(parents=True)
+    (pkg / "test").mkdir()
+    shutil.copy(sample / "foundry.toml", pkg / "foundry.toml")
+    (pkg / "src" / "Counter.sol").write_text(NESTED_SRC)
+    (pkg / "test" / "Counter.t.sol").write_text(NESTED_TEST)
+    return pkg
+
+
+def test_nested_module_gets_its_own_coverage(nested, capsys):
+    # pkg/ is its own Foundry module: forge runs there and its LCOV is attributed to its rows
+    assert call(["pkg"]) == 0
+    got = {(r[0], r[1]): r[4] for r in rows(capsys.readouterr().out)}
+    assert got == {("inc()", "Counter"): "100.0%", ("pick(uint256)", "Counter"): "0.0%"}
+
+
+def test_root_and_nested_modules_report_together(nested, capsys):
+    assert call([".", "pkg"]) == 2
+    got = {ident(r) for r in rows(capsys.readouterr().out)}
+    assert got == VAULT_ROWS | BASE_ROWS | FREE_ROWS | {
+        ("inc()", "Counter", "function", 1),
+        ("pick(uint256)", "Counter", "function", 2),
+    }
+
+
 # --- failures -------------------------------------------------------------------------
 
 
@@ -208,13 +298,17 @@ def test_failing_forge_test_exits_three_without_table(sample, capsys):
     assert call([]) == 3
     out, err = capsys.readouterr()
     assert "forge coverage failed" in err
-    assert "Function" not in out
+    assert err.startswith("crap4sol: ")
+    assert out == ""
 
 
 def test_compile_error_exits_three(sample, capsys):
     (sample / "src" / "Broken.sol").write_text("pragma solidity ^0.8.20;\ncontract Broken {\n")
     assert call([]) == 3
-    assert "Traceback" not in capsys.readouterr().err
+    out, err = capsys.readouterr()
+    assert "Traceback" not in err
+    assert err.startswith("crap4sol: ")
+    assert out == ""
 
 
 # --- console script -------------------------------------------------------------------
