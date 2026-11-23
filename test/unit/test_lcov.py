@@ -226,3 +226,22 @@ def test_load_lcov_strips_utf8_bom_so_first_sf_is_kept(tmp_path):
     p = tmp_path / "lcov.info"
     p.write_bytes(b"\xef\xbb\xbfSF:src/A.sol\nDA:1,1\nend_of_record\n")
     assert load_lcov(p) == {"src/A.sol": FileCoverage(lines={1: 1})}
+
+
+def test_load_lcov_bom_only_file_is_none(tmp_path):
+    p = tmp_path / "lcov.info"
+    p.write_bytes(b"\xef\xbb\xbf")
+    assert load_lcov(p) is None
+
+
+def test_load_lcov_bom_and_whitespace_file_is_none(tmp_path):
+    p = tmp_path / "lcov.info"
+    p.write_bytes(b"\xef\xbb\xbf \n\t\n")
+    assert load_lcov(p) is None
+
+
+def test_load_lcov_utf16_file_raises_analysis_error(tmp_path):
+    p = tmp_path / "lcov.info"
+    p.write_bytes("SF:src/A.sol\nDA:1,1\nend_of_record\n".encode("utf-16"))
+    with pytest.raises(AnalysisError, match=str(p)):
+        load_lcov(p)

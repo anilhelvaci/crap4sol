@@ -5,7 +5,7 @@ import io
 import pytest
 
 from crap4sol.errors import EXIT_SUCCESS, EXIT_THRESHOLD_EXCEEDED
-from crap4sol.metrics import Callable, Kind, Metric
+from crap4sol.metrics import Callable, Kind, Metric, crap
 from crap4sol.report import THRESHOLD, check_threshold, max_crap, render, sort_metrics
 
 
@@ -210,3 +210,19 @@ def test_render_crap_a_hair_over_threshold_does_not_display_as_threshold():
 
 def test_render_coverage_a_hair_below_full_does_not_display_as_full():
     assert cov_cell(m(coverage=1 - 1e-10)) == "99.9%"
+
+
+# --- review on 8055f99: exact-step values computed by crap() must not round up a step ---
+
+
+@pytest.mark.parametrize(
+    "cc, coverage, shown",
+    [(5, 3 / 5, "6.60"), (10, 7 / 10, "12.70"), (10, 3 / 10, "44.30"), (5, 4 / 5, "5.20")],
+)
+def test_render_exact_step_crap_from_formula_is_not_bumped(cc, coverage, shown):
+    assert crap_cell(m(crap=crap(cc, coverage), coverage=coverage, cc=cc)) == shown
+
+
+@pytest.mark.parametrize("hit, total, shown", [(29, 100, "29.0%"), (7, 10, "70.0%")])
+def test_render_exact_step_coverage_ratio_is_not_dropped(hit, total, shown):
+    assert cov_cell(m(coverage=hit / total)) == shown
