@@ -125,3 +125,30 @@ def test_group_files_without_marker_join_project_root_group(root):
         root: [root / "other/src/O.sol", root / "src/R.sol"],
         root / "modA": [root / "modA/src/A.sol"],
     }
+
+
+# --- review follow-ups (M2/3) -----------------------------------------------------
+
+
+def test_group_values_are_resolved(root):
+    touch(root, "modA/foundry.toml", "modA/src/A.sol")
+    got = group_by_module([root / "modA/src/../src/A.sol"], root)
+    assert got == {root / "modA": [root / "modA/src/A.sol"]}
+
+
+def test_group_dedupes_same_file_spelled_differently(root):
+    touch(root, "src/A.sol")
+    got = group_by_module([root / "src/A.sol", root / "src/./A.sol", root / "x/../src/A.sol"], root)
+    assert got == {root: [root / "src/A.sol"]}
+
+
+def test_file_outside_project_root_falls_back_to_project_root(root):
+    touch(root.parent, "other/foundry.toml", "other/src/O.sol")
+    assert module_root(root.parent / "other/src/O.sol", root) == root
+
+
+def test_symlinked_file_groups_by_target_module(root):
+    touch(root, "modA/foundry.toml", "modA/src/A.sol")
+    (root / "src").mkdir()
+    (root / "src/Link.sol").symlink_to(root / "modA/src/A.sol")
+    assert module_root(root / "src/Link.sol", root) == root / "modA"

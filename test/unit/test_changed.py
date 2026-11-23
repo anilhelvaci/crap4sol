@@ -221,10 +221,21 @@ def test_parse_drops_unmerged_entries_with_a_deletion(code):
     assert parse_porcelain(f"{code} src/A.sol\n") == []
 
 
+def _mkdir_or_skip(path: Path) -> None:
+    try:
+        path.mkdir()
+    except OSError as exc:  # e.g. macOS APFS rejects non-UTF-8 names
+        pytest.skip(f"filesystem rejects non-UTF-8 name: {exc}")
+
+
+def _non_utf8(base: Path, name: bytes) -> Path:
+    return Path(os.fsdecode(os.fsencode(str(base)) + b"/" + name))
+
+
 def test_non_utf8_repo_path_still_selects_changed_files(tmp_path):
     # Linux paths are bytes; git output under such a root must not crash decoding.
-    root = Path(os.fsdecode(os.fsencode(str(tmp_path.resolve())) + b"/r\xff"))
-    root.mkdir()
+    root = _non_utf8(tmp_path.resolve(), b"r\xff")
+    _mkdir_or_skip(root)
     git(root, "init", "-q")
     write(root, "src/A.sol")
     assert select_changed(root) == [root / "src/A.sol"]
@@ -239,3 +250,24 @@ def test_missing_git_binary_raises_analysis_error(repo, monkeypatch):
 def test_nonexistent_project_root_raises_analysis_error(tmp_path):
     with pytest.raises(AnalysisError):
         select_changed(tmp_path.resolve() / "nope")
+
+
+# --- review follow-ups (M2/3) -----------------------------------------------------
+
+
+def test_non_utf8_file_name_under_src_round_trips(repo):
+    (repo / "src").mkdir(exist_ok=True)
+    d = _non_utf8(repo / "src", b"d\xfe")
+    _mkdir_or_skip(d)
+    (d / "A.sol").write_text("// x\n")
+    assert select_changed(repo) == [d / "A.sol"]
+
+
+def test_repo_root_with_trailing_space_in_name(tmp_path):
+    # `rev-parse --show-toplevel` output must lose only its newline, not the space.
+    root = tmp_path.resolve() / "r "
+    root.mkdir()
+    git(root, "init", "-q")
+    write(root, "src/A.sol")
+    assert select_changed(root) == [root / "src/A.sol"]
+
