@@ -1,6 +1,6 @@
 """Report table (spec §11) and CRAP threshold check (spec §12)."""
 
-import math
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from typing import TextIO
 
 from crap4sol.errors import EXIT_SUCCESS, EXIT_THRESHOLD_EXCEEDED
@@ -24,17 +24,21 @@ def sort_metrics(metrics: list[Metric]) -> list[Metric]:
     return sorted(metrics, key=key)
 
 
-def _round_to(x: float, digits: int, rounder) -> float:
-    """Round x to `digits` decimals with ceil/floor, ignoring binary float noise (1.1 stays 1.1)."""
-    scale = 10**digits
-    return rounder(round(x * scale, 6)) / scale
+def _round_to(x: float, digits: int, rounding: str, scale: int = 1) -> str:
+    """Format x*scale to `digits` decimals with directed rounding.
+
+    Decimal(repr(x)) uses the shortest round-trip form, so 1.1 stays 1.10 while a value
+    a hair above/below a step still moves away from it.
+    """
+    value = Decimal(repr(x)) * scale
+    return str(value.quantize(Decimal(1).scaleb(-digits), rounding=rounding))
 
 
 def _cells(m: Metric) -> tuple[str, ...]:
     c = m.callable
     # Display never flatters: coverage rounds down, CRAP rounds up.
-    cov = _NA if m.coverage is None else f"{_round_to(m.coverage * 100, 1, math.floor):.1f}%"
-    crap = _NA if m.crap is None else f"{_round_to(m.crap, 2, math.ceil):.2f}"
+    cov = _NA if m.coverage is None else f"{_round_to(m.coverage, 1, ROUND_FLOOR, scale=100)}%"
+    crap = _NA if m.crap is None else _round_to(m.crap, 2, ROUND_CEILING)
     return (c.signature, c.contract, c.kind.value, str(c.cc), cov, crap)
 
 
