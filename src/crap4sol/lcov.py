@@ -59,7 +59,7 @@ def load_lcov(path: Path) -> dict[str, FileCoverage] | None:
     if not path.is_file():
         return None
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError) as e:
         raise AnalysisError(f"{path}: cannot read LCOV: {e}") from e
     if not text.strip():
