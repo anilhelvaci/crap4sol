@@ -1,5 +1,6 @@
 """File selection (spec §4, §5): default `src/**` scan, explicit paths, exclusions."""
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -80,14 +81,15 @@ def _read_path(s: str) -> tuple[str, str]:
 
 
 def parse_porcelain(text: str) -> list[str]:
-    """Paths from `git status --porcelain` v1: modified, added, untracked (input order).
+    """Paths from `git status --porcelain` v1: modified (incl. unmerged, type-changed), added,
+    untracked (input order).
     Renames/copies yield the new path; anything with a deletion is dropped."""
     paths: list[str] = []
     for line in text.splitlines():
         if len(line) < 4:
             continue
         code, rest = line[:2], line[3:]
-        if "D" in code or not any(c in code for c in "MA?RC"):
+        if "D" in code or not any(c in code for c in "MA?RCUT"):
             continue
         if "R" in code or "C" in code:
             if rest.startswith('"'):
@@ -103,13 +105,14 @@ def parse_porcelain(text: str) -> list[str]:
 def _git(project_root: Path, *args: str) -> str:
     try:
         proc = subprocess.run(
-            ["git", *args], cwd=project_root, capture_output=True, text=True, check=False
+            ["git", *args], cwd=project_root, capture_output=True, check=False
         )
     except OSError as exc:
         raise AnalysisError(f"git failed: {exc}") from exc
     if proc.returncode != 0:
-        raise AnalysisError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
-    return proc.stdout
+        err = proc.stderr.decode("utf-8", errors="replace").strip()
+        raise AnalysisError(f"git {' '.join(args)} failed: {err}")
+    return os.fsdecode(proc.stdout)
 
 
 def select_changed(project_root: Path) -> list[Path]:
