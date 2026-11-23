@@ -42,14 +42,15 @@ def run_coverage(
     except OSError as exc:
         raise AnalysisError(f"forge coverage failed in {root}: {exc}") from exc
     if proc.returncode != 0:
-        # forge reports failing tests on stdout, often with an empty stderr
-        err = _text(proc.stderr).strip() or _text(proc.stdout).strip()
+        # forge reports failing tests on stdout; stderr may hold only compiler noise
+        out = (_text(proc.stderr).strip(), _text(proc.stdout).strip())
+        err = "\n".join(part for part in out if part)
         raise AnalysisError(
             f"forge coverage failed in {root} (exit {proc.returncode}): {err}"
         )
 
     report = load_lcov(report_file)
-    if report is None:
+    if not report:  # missing, empty, or no SF records
         print(
             f"Warning: {os.fspath(report_file)} missing or empty after forge coverage in "
             f"{root}; coverage N/A for this module",
