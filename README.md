@@ -67,7 +67,7 @@ The table goes to stdout; warnings and errors go to stderr. Cov% rounds down and
 | 0 | success: empty selection, or max CRAP ≤ 8.0 (and the output was written) |
 | 1 | usage error, including `--coverage branch` |
 | 2 | CRAP threshold exceeded (max CRAP > 8.0); stderr `CRAP threshold exceeded: <max> > 8.0` |
-| 3 | analysis failure: `forge coverage` failed (incl. failing tests), Slither/compile error, I/O error, `--changed` outside a git repo, unexpected internal error (e.g. analyzer crash), stdout not writable (closed pipe, full disk), even for an empty selection or a threshold breach |
+| 3 | analysis failure: `forge coverage` failed (incl. failing tests), Slither/compile error, I/O error, `--changed` outside a git repo, unexpected internal error (e.g. analyzer crash), stdout not writable (closed pipe or fd, full disk), even for an empty selection, `--help` or a threshold breach |
 
 The threshold is fixed at `8.0` and is not configurable.
 

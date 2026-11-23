@@ -7,7 +7,7 @@ from collections.abc import Callable as Fn
 from pathlib import Path
 from typing import NoReturn
 
-from crap4sol import callables, forge, report, selection
+from crap4sol import forge, report, selection
 from crap4sol.coverage import attribute
 from crap4sol.errors import (
     EXIT_ANALYSIS_FAILURE,
@@ -33,6 +33,14 @@ class _Parser(argparse.ArgumentParser):
         _err(f"{self.prog}: error: {message}")
         sys.exit(EXIT_USAGE)
 
+    def print_help(self, file=None) -> None:
+        """argparse swallows help write errors; route stdout help through _emit so an
+        undeliverable --help surfaces as _Unwritable."""
+        if file is None:
+            _emit(self.format_help())
+        else:
+            super().print_help(file)
+
 
 def _parser() -> _Parser:
     p = _Parser(prog="crap4sol", description="CRAP quality gate for Foundry Solidity projects.")
@@ -51,6 +59,14 @@ def _select(root: Path, args: argparse.Namespace) -> list[Path]:
     if args.paths:
         return selection.select_paths(root, args.paths)
     return selection.select_default(root)
+
+
+def _default_collect(module_root: Path, files: list[Path]) -> list[Callable]:
+    # Imported lazily: Slither calls sys.stdout.isatty() at import, which crashes when
+    # stdout is closed (`crap4sol >&-`); inside the analysis try that is an exit 3.
+    from crap4sol.callables import collect_callables
+
+    return collect_callables(module_root, files)
 
 
 def _analyze(
@@ -78,10 +94,20 @@ def _silence(stream) -> None:
         os.close(devnull)
 
 
+class _Unwritable(Exception):
+    """stdout could not take our output (closed fd, broken pipe, full disk)."""
+
+
 def _emit(text: str) -> None:
     """Write to stdout and flush, so a write failure surfaces here rather than at exit."""
-    sys.stdout.write(text)
-    sys.stdout.flush()
+    if sys.stdout is None:  # fd 1 closed at startup (`crap4sol >&-`)
+        raise _Unwritable("stdout is closed")
+    try:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+    except (OSError, ValueError) as exc:  # ValueError: write to a closed file object
+        _silence(sys.stdout)
+        raise _Unwritable(str(exc)) from exc
 
 
 class _Stderr:
@@ -89,10 +115,12 @@ class _Stderr:
     exit code (e.g. `crap4sol 2>&1 | head -c0`)."""
 
     def write(self, text: str) -> int:
+        if sys.stderr is None:  # fd 2 closed at startup (`crap4sol 2>&-`)
+            return len(text)
         try:
             sys.stderr.write(text)
             sys.stderr.flush()
-        except OSError:
+        except (OSError, ValueError):
             _silence(sys.stderr)
         return len(text)
 
@@ -112,6 +140,9 @@ def main(
         args = parser.parse_args(argv)
     except SystemExit as exc:  # --help (0) or usage error (1)
         return exc.code if isinstance(exc.code, int) else EXIT_USAGE
+    except _Unwritable as exc:  # --help text not delivered: same rule as the report
+        _err(f"crap4sol: cannot write help: {exc}")
+        return EXIT_ANALYSIS_FAILURE
     if args.changed and args.paths:
         _err(parser.format_usage().rstrip("\n"))
         _err("crap4sol: error: --changed takes no paths")
@@ -119,6 +150,10 @@ def main(
     if args.coverage == "branch":
         _err(BRANCH_MSG)
         return EXIT_USAGE
+
+    if sys.stdout is None:  # report can never be delivered: don't run forge/Slither for it
+        _err("crap4sol: cannot write report: stdout is closed")
+        return EXIT_ANALYSIS_FAILURE
 
     try:
         root = Path.cwd().resolve()
@@ -129,7 +164,7 @@ def main(
                 root,
                 files,
                 run_coverage or forge.run_coverage,
-                collect_callables or callables.collect_callables,
+                collect_callables or _default_collect,
             )
             text = report.render(report.sort_metrics(metrics))
         else:
@@ -143,8 +178,7 @@ def main(
 
     try:
         _emit(text)
-    except OSError as exc:  # closed pipe, full disk: the output was not delivered
-        _silence(sys.stdout)
+    except _Unwritable as exc:  # closed pipe, full disk: the output was not delivered
         _err(f"crap4sol: cannot write report: {exc}")
         return EXIT_ANALYSIS_FAILURE
 
