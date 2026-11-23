@@ -217,8 +217,9 @@ def test_explicit_dir_outside_project_root_selects_nothing(tmp_path):
 def test_default_skips_src_symlink_resolving_outside_project_root(tmp_path):
     root = (tmp_path / "proj").resolve()
     touch(root, "src/A.sol")
-    touch(tmp_path, "outside/test/Y.sol")
-    (root / "src/ext").symlink_to(tmp_path / "outside")
+    touch(tmp_path, "outside/Y.sol")
+    # A symlinked FILE (rglob yields it on every Python version) resolving outside the root.
+    (root / "src/Ext.sol").symlink_to(tmp_path / "outside/Y.sol")
     assert rels(root, select_default(root)) == ["src/A.sol"]
 
 
