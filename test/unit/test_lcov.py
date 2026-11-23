@@ -1,5 +1,8 @@
 """T1.3-T1.5: LCOV parsing (spec §7.3), missing/empty LCOV (§7), SF normalization (§9.1)."""
 
+import pytest
+
+from crap4sol.errors import AnalysisError
 from crap4sol.lcov import FileCoverage, load_lcov, normalize_sf, parse_lcov
 
 SAMPLE = """\
@@ -89,3 +92,53 @@ def test_normalize_absolute_and_relative_forms_are_equal(tmp_path):
     assert normalize_sf(str(tmp_path / "src/Vault.sol"), tmp_path) == normalize_sf(
         "src/Vault.sol", tmp_path
     )
+
+
+# --- hardening (review follow-ups on f139354) ---
+
+def test_parse_sums_duplicate_da_lines_in_one_record():
+    text = "SF:src/A.sol\nDA:5,3\nDA:5,0\nend_of_record\n"
+    assert parse_lcov(text)["src/A.sol"].lines == {5: 3}
+
+
+def test_parse_merges_repeated_sf_records_by_summing_hits():
+    text = (
+        "SF:src/A.sol\nDA:5,2\nDA:6,0\nend_of_record\n"
+        "SF:src/A.sol\nDA:5,1\nDA:7,4\nend_of_record\n"
+    )
+    assert parse_lcov(text)["src/A.sol"].lines == {5: 3, 6: 0, 7: 4}
+
+
+def test_parse_accepts_da_checksum_field():
+    text = "SF:src/A.sol\nDA:5,2,abc123\nend_of_record\n"
+    assert parse_lcov(text)["src/A.sol"].lines == {5: 2}
+
+
+def test_parse_ignores_da_before_any_sf():
+    text = "DA:1,1\nSF:src/A.sol\nDA:5,2\nend_of_record\n"
+    assert parse_lcov(text) == {"src/A.sol": FileCoverage(lines={5: 2})}
+
+
+def test_parse_da_missing_hits_raises_analysis_error():
+    with pytest.raises(AnalysisError, match="DA:10,"):
+        parse_lcov("SF:src/A.sol\nDA:10,\nend_of_record\n")
+
+
+def test_parse_da_non_numeric_line_raises_analysis_error():
+    with pytest.raises(AnalysisError, match="DA:x,1"):
+        parse_lcov("SF:src/A.sol\nDA:x,1\nend_of_record\n")
+
+
+def test_load_lcov_whitespace_only_file_is_none(tmp_path):
+    p = tmp_path / "lcov.info"
+    p.write_text("  \n\n\t\n")
+    assert load_lcov(p) is None
+
+
+def test_normalize_collapses_dotdot_in_absolute_sf(tmp_path):
+    sf = str(tmp_path / "lib" / ".." / "src" / "A.sol")
+    assert normalize_sf(sf, tmp_path) == "src/A.sol"
+
+
+def test_normalize_collapses_dotdot_in_relative_sf(tmp_path):
+    assert normalize_sf("lib/../src/A.sol", tmp_path) == "src/A.sol"
