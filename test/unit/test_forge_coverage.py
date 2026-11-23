@@ -295,3 +295,51 @@ def test_default_runner_missing_forge_raises_analysis_error(module, monkeypatch)
     monkeypatch.setenv("PATH", str(module))  # no forge on PATH
     with pytest.raises(AnalysisError):
         run_coverage(module)
+
+
+# --- round-2 review follow-ups ----------------------------------------------------------
+
+
+def test_error_includes_stdout_fail_lines_even_with_stderr_noise(module):
+    # routine compiler warnings on stderr must not hide the [FAIL] lines forge prints on stdout
+    fake = FakeRunner(
+        returncode=1,
+        stdout="[FAIL: assertion failed] test_x() (gas: 1)",
+        stderr="Warning: unused variable",
+    )
+    with pytest.raises(AnalysisError) as ei:
+        run_coverage(module, runner=fake)
+    msg = str(ei.value)
+    assert "[FAIL: assertion failed] test_x()" in msg
+    assert "Warning: unused variable" in msg
+
+
+def test_lcov_without_sf_records_returns_none(module):
+    fake = FakeRunner(lcov_text="TN:\n")
+    assert run_coverage(module, runner=fake) is None
+
+
+def test_lcov_without_sf_records_warns_on_stderr(module, capsys):
+    fake = FakeRunner(lcov_text="TN:\n")
+    run_coverage(module, runner=fake)
+    err = capsys.readouterr().err
+    assert err.startswith("Warning:")
+    assert str(module) in err
+
+
+FAILING_STUB_FORGE = """#!/bin/sh
+echo "[FAIL: boom] test_stub() (gas: 1)"
+exit 1
+"""
+
+
+def test_default_runner_nonzero_exit_raises_with_forge_output(module, tmp_path, monkeypatch):
+    bin_dir = tmp_path / "failbin"
+    bin_dir.mkdir()
+    forge = bin_dir / "forge"
+    forge.write_text(FAILING_STUB_FORGE)
+    forge.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    with pytest.raises(AnalysisError) as ei:
+        run_coverage(module)
+    assert "[FAIL: boom] test_stub()" in str(ei.value)
