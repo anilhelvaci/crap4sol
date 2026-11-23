@@ -7,14 +7,14 @@ EXCLUDED_SUFFIXES = (".t.sol", ".s.sol")
 
 
 def _is_excluded(project_root: Path, path: Path) -> bool:
-    """Excluded if its name is a test/script file, or any component relative to the root is an
-    excluded dir. Components above the project root never count."""
-    if path.name.endswith(EXCLUDED_SUFFIXES):
+    """Excluded unless a `.sol` file inside the project root; also excluded if a test/script file
+    or any dir component relative to the root is an excluded dir (components above the root
+    never count)."""
+    if path.suffix != ".sol" or path.name.endswith(EXCLUDED_SUFFIXES):
         return True
-    try:
-        parts = path.relative_to(project_root).parts[:-1]
-    except ValueError:
-        parts = ()
+    if not path.is_relative_to(project_root):
+        return True
+    parts = path.relative_to(project_root).parts[:-1]
     return any(part in EXCLUDED_DIRS for part in parts)
 
 
