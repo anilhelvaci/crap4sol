@@ -199,3 +199,14 @@ def test_render_coverage_exact_one_decimal_value_is_unchanged():
 
 def test_render_full_coverage_is_hundred_percent():
     assert cov_cell(m(coverage=1.0)) == "100.0%"
+
+
+# --- review follow-ups on 76bf812: no snapping near a rounding step ---
+
+
+def test_render_crap_a_hair_over_threshold_does_not_display_as_threshold():
+    assert crap_cell(m(crap=8.0 + 1e-9)) == "8.01"
+
+
+def test_render_coverage_a_hair_below_full_does_not_display_as_full():
+    assert cov_cell(m(coverage=1 - 1e-10)) == "99.9%"

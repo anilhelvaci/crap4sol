@@ -220,3 +220,9 @@ def test_load_lcov_read_oserror_raises_analysis_error(tmp_path, monkeypatch):
     monkeypatch.setattr(type(p), "read_text", boom)
     with pytest.raises(AnalysisError, match=str(p)):
         load_lcov(p)
+
+
+def test_load_lcov_strips_utf8_bom_so_first_sf_is_kept(tmp_path):
+    p = tmp_path / "lcov.info"
+    p.write_bytes(b"\xef\xbb\xbfSF:src/A.sol\nDA:1,1\nend_of_record\n")
+    assert load_lcov(p) == {"src/A.sol": FileCoverage(lines={1: 1})}
