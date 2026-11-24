@@ -15,12 +15,29 @@ It prints a table sorted worst-first and fails when the maximum CRAP exceeds the
 
 ## Install
 
-Requirements: Python ≥ 3.12, [Foundry](https://book.getfoundry.sh/) (`forge` on `PATH`).
+Requirements: Python ≥ 3.12, [uv](https://docs.astral.sh/uv/), [Foundry](https://book.getfoundry.sh/) (`forge` on `PATH`).
 
-From a checkout:
+Clone and run the install script:
 
 ```sh
-uv tool install .            # puts `crap4sol` on PATH
+git clone https://github.com/anilhelvaci/crap4sol.git
+cd crap4sol
+./install.sh                 # symlinks bin/crap4sol into ~/.local/bin (or ./install.sh <dir>)
+crap4sol --help
+```
+
+`install.sh` runs `uv sync` and links `<dir>/crap4sol` to the checkout's `bin/crap4sol`
+launcher, which runs `uv run --project <checkout> crap4sol` from your current directory. It
+refuses to overwrite an existing non-symlink file, warns if `uv` or `forge` is missing, and
+prints the `export PATH=...` line if the directory is not on `PATH`. Re-running it is safe.
+To upgrade, `git pull` in the checkout; the symlink picks up the change.
+To remove it, run `./uninstall.sh` (or `./uninstall.sh <dir>`); it deletes the link only if it
+points to this checkout.
+
+Alternatively, without the script:
+
+```sh
+uv tool install .            # puts `crap4sol` on PATH (re-run after `git pull`)
 # or, without installing:
 uv sync && uv run crap4sol --help
 ```

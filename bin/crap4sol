@@ -1,0 +1,28 @@
+#!/bin/sh
+# Launcher: runs crap4sol from this checkout via `uv run`, keeping the caller's cwd.
+# Resolves symlinks (e.g. ~/.local/bin/crap4sol -> <repo>/bin/crap4sol) to find the repo.
+unset CDPATH  # an exported CDPATH would redirect (and echo) relative cd
+self=$0
+hops=0
+while [ -L "$self" ]; do
+    hops=$((hops + 1))
+    if [ "$hops" -gt 40 ]; then
+        echo "crap4sol: too many levels of symlinks resolving $0" >&2
+        exit 3
+    fi
+    dir=$(cd -P "$(dirname "$self")" && pwd)
+    link=$(readlink "$self")
+    case $link in
+        /*) self=$link ;;
+        *) self=$dir/$link ;;
+    esac
+done
+repo=$(cd -P "$(dirname "$self")/.." && pwd)
+
+if ! command -v uv >/dev/null 2>&1; then
+    echo "crap4sol: uv not found on PATH; install it: https://docs.astral.sh/uv/getting-started/installation/" >&2
+    exit 3
+fi
+# sync first so a uv/env failure exits 3 (analysis failure), never uv's own code
+uv sync --quiet --project "$repo" || exit 3
+exec uv run --no-sync --quiet --project "$repo" crap4sol "$@"
