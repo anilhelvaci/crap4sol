@@ -12,9 +12,9 @@ LAUNCHER = REPO / "bin" / "crap4sol"
 UNINSTALL = REPO / "uninstall.sh"
 
 
-def run(argv, cwd, env=None):
+def run(argv, cwd, env=None, timeout=60):
     return subprocess.run(
-        [str(a) for a in argv], cwd=cwd, env=env, capture_output=True, text=True, timeout=60
+        [str(a) for a in argv], cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout
     )
 
 
@@ -25,8 +25,8 @@ def env(tmp_path):
     return {**os.environ, "HOME": str(home)}
 
 
-def uninstall(target, cwd, env):
-    return run([UNINSTALL] if target is None else [UNINSTALL, target], cwd, env)
+def uninstall(target, cwd, env, timeout=60):
+    return run([UNINSTALL] if target is None else [UNINSTALL, target], cwd, env, timeout)
 
 
 def test_uninstall_is_committed_executable():
@@ -88,7 +88,57 @@ def test_uninstall_keeps_regular_file(tmp_path, env):
 
 
 def test_uninstall_nothing_installed_is_ok(tmp_path, env):
-    # idempotent: second uninstall is a no-op success
     (tmp_path / "bin").mkdir()
     p = uninstall(tmp_path / "bin", tmp_path, env)
     assert p.returncode == 0, p.stderr
+
+
+def test_uninstall_twice_second_is_noop_success(tmp_path, env):
+    link = tmp_path / "bin" / "crap4sol"
+    link.parent.mkdir()
+    link.symlink_to(LAUNCHER)
+    assert uninstall(tmp_path / "bin", tmp_path, env).returncode == 0
+    p = uninstall(tmp_path / "bin", tmp_path, env)
+    assert p.returncode == 0, p.stderr
+    assert LAUNCHER.is_file()
+
+
+def test_uninstall_keeps_dangling_link(tmp_path, env):
+    # a link to a deleted file is not provably ours
+    link = tmp_path / "bin" / "crap4sol"
+    link.parent.mkdir()
+    link.symlink_to(tmp_path / "gone" / "crap4sol")
+    p = uninstall(tmp_path / "bin", tmp_path, env)
+    assert p.returncode == 1
+    assert link.is_symlink()
+
+
+def test_uninstall_cyclic_link_terminates_and_keeps_it(tmp_path, env):
+    # attack: crap4sol -> crap4sol; link resolution must not loop forever
+    link = tmp_path / "bin" / "crap4sol"
+    link.parent.mkdir()
+    link.symlink_to("crap4sol")
+    p = uninstall(tmp_path / "bin", tmp_path, env, timeout=15)
+    assert p.returncode == 1
+    assert link.is_symlink()
+    assert str(link) in p.stdout + p.stderr
+
+
+def test_uninstall_trailing_slash_target(tmp_path, env):
+    link = tmp_path / "bin" / "crap4sol"
+    link.parent.mkdir()
+    link.symlink_to(LAUNCHER)
+    p = uninstall(f"{tmp_path / 'bin'}//", tmp_path, env)
+    assert p.returncode == 0, p.stderr
+    assert not link.is_symlink()
+
+
+def test_uninstall_relative_invocation_ignores_cdpath(tmp_path, env):
+    (tmp_path / "decoy" / REPO.name / "bin").mkdir(parents=True)
+    link = tmp_path / "bin" / "crap4sol"
+    link.parent.mkdir()
+    link.symlink_to(LAUNCHER)
+    e = {**env, "CDPATH": str(tmp_path / "decoy")}
+    p = run(["sh", f"{REPO.name}/uninstall.sh", tmp_path / "bin"], REPO.parent, e)
+    assert p.returncode == 0, p.stderr
+    assert not link.is_symlink()
