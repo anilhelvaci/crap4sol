@@ -275,6 +275,14 @@ def test_nested_module_gets_its_own_coverage(nested, capsys):
     assert got == {("inc()", "Counter"): "100.0%", ("pick(uint256)", "Counter"): "0.0%"}
 
 
+def test_nested_module_out_dir_is_cleaned(nested, capsys):
+    # issue #5: forge clean runs per module, in the nested module's root too
+    (nested / "out").mkdir()
+    (nested / "out" / "stale-marker.txt").write_text("stale")
+    assert call(["pkg"]) == 0
+    assert not (nested / "out" / "stale-marker.txt").exists()
+
+
 def test_root_and_nested_modules_report_together(nested, capsys):
     assert call([".", "pkg"]) == 2
     got = {ident(r) for r in rows(capsys.readouterr().out)}
@@ -326,7 +334,7 @@ def test_run_cleans_stale_build_artifacts(sample, capsys):
     (sample / "cache").mkdir(exist_ok=True)
     stale_cache = sample / "cache" / "solidity-files-cache.json"
     stale_cache.write_text('{"stale": true}')
-    call([])
+    assert call([]) == 2  # sample breaches the threshold; the run itself succeeded
     assert not (sample / "out" / "stale-marker.txt").exists()
     assert not stale_cache.exists() or stale_cache.read_text() != '{"stale": true}'
 

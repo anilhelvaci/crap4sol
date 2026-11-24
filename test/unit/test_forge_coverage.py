@@ -54,6 +54,9 @@ class FakeRunner:
         self.lcov_existed_at_call = report.exists()
         if self.lcov_text is not None:
             report.write_text(self.lcov_text)
+        if self.fail_step is not None:
+            # only fail_step fails: a coverage run that got this far succeeds silently
+            return subprocess.CompletedProcess(argv, 0, "", "")
         return subprocess.CompletedProcess(argv, self.returncode, self.stdout, self.stderr)
 
     def coverage_calls(self):
@@ -419,7 +422,13 @@ def test_clean_failure_error_names_forge_clean(module):
 
 
 def test_clean_failure_error_names_module_exit_code_and_output(module):
-    fake = FakeRunner(returncode=7, fail_step="clean", stdout="clean out", stderr="clean err")
+    fake = FakeRunner(
+        returncode=7,
+        fail_step="clean",
+        stdout="clean out",
+        stderr="clean err",
+        lcov_text=LCOV.format(sf="src/A.sol"),
+    )
     with pytest.raises(AnalysisError) as ei:
         run_coverage(module, runner=fake)
     msg = str(ei.value)
@@ -453,7 +462,11 @@ def test_build_failure_error_names_forge_build(module):
 
 def test_build_failure_error_names_module_exit_code_and_output(module):
     fake = FakeRunner(
-        returncode=2, fail_step="build", stdout="Error (2314): Expected ';'", stderr="warn"
+        returncode=2,
+        fail_step="build",
+        stdout="Error (2314): Expected ';'",
+        stderr="warn",
+        lcov_text=LCOV.format(sf="src/A.sol"),
     )
     with pytest.raises(AnalysisError) as ei:
         run_coverage(module, runner=fake)
@@ -562,3 +575,22 @@ def test_default_runner_build_failure_names_forge_build(module, tmp_path, monkey
         run_coverage(module)
     assert "forge build failed" in str(ei.value)
     assert "Compiler run failed: stub" in str(ei.value)
+
+
+# --- issue #5 review follow-ups ---------------------------------------------------------
+
+
+def test_coverage_oserror_after_clean_build_names_forge_coverage(module):
+    calls = []
+
+    def runner(argv, cwd):
+        calls.append(argv[1])
+        if argv[1] == "coverage":
+            raise FileNotFoundError(2, "No such file or directory", "forge")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    with pytest.raises(AnalysisError) as ei:
+        run_coverage(module, runner=runner)
+    assert calls == ["clean", "build", "coverage"]
+    assert "forge coverage" in str(ei.value)
+    assert str(module) in str(ei.value)
