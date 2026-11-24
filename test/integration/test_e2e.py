@@ -283,6 +283,24 @@ def test_nested_module_out_dir_is_cleaned(nested, capsys):
     assert not (nested / "out" / "stale-marker.txt").exists()
 
 
+def test_selecting_nested_module_leaves_root_out_untouched(nested, capsys):
+    root_marker = nested.parent / "out" / "root-marker.txt"
+    root_marker.parent.mkdir(exist_ok=True)
+    root_marker.write_text("keep")
+    assert call(["pkg"]) == 0
+    assert root_marker.exists()
+
+
+def test_custom_out_dir_in_foundry_toml_is_cleaned(sample, capsys):
+    # README: forge clean wipes the configured out dir, not just the default out/
+    toml = sample / "foundry.toml"
+    toml.write_text(toml.read_text().replace('libs = ["lib"]', 'libs = ["lib"]\nout = "artifacts"'))
+    (sample / "artifacts").mkdir()
+    (sample / "artifacts" / "stale-marker.txt").write_text("stale")
+    assert call([]) == 2
+    assert not (sample / "artifacts" / "stale-marker.txt").exists()
+
+
 def test_root_and_nested_modules_report_together(nested, capsys):
     assert call([".", "pkg"]) == 2
     got = {ident(r) for r in rows(capsys.readouterr().out)}

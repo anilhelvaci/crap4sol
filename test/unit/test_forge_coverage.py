@@ -29,10 +29,12 @@ end_of_record
 class FakeRunner:
     """Records calls; optionally writes an LCOV file like forge would.
 
-    Handles `forge clean` / `forge build` (succeed by default; `fail_step` makes one fail
-    with `returncode`, `stdout`, `stderr`) and `forge coverage` (uses `returncode`)."""
+    Handles `forge clean` / `forge build` (succeed by default) and `forge coverage`.
+    fail_step=None: coverage returns `returncode`, `stdout`, `stderr`.
+    fail_step='clean'|'build': only that step returns them; every other step succeeds."""
 
     def __init__(self, returncode=0, lcov_text=None, stdout="", stderr="", fail_step=None):
+        assert fail_step in (None, "clean", "build"), fail_step
         self.returncode = returncode
         self.lcov_text = lcov_text
         self.stdout = stdout
