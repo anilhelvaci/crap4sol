@@ -31,6 +31,8 @@ launcher, which runs `uv run --project <checkout> crap4sol` from your current di
 refuses to overwrite an existing non-symlink file, warns if `uv` or `forge` is missing, and
 prints the `export PATH=...` line if the directory is not on `PATH`. Re-running it is safe.
 To upgrade, `git pull` in the checkout; the symlink picks up the change.
+To remove it, run `./uninstall.sh` (or `./uninstall.sh <dir>`); it deletes the link only if it
+points to this checkout.
 
 Alternatively, without the script:
 

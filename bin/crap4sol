@@ -1,6 +1,7 @@
 #!/bin/sh
 # Launcher: runs crap4sol from this checkout via `uv run`, keeping the caller's cwd.
 # Resolves symlinks (e.g. ~/.local/bin/crap4sol -> <repo>/bin/crap4sol) to find the repo.
+unset CDPATH  # an exported CDPATH would redirect (and echo) relative cd
 self=$0
 while [ -L "$self" ]; do
     dir=$(cd -P "$(dirname "$self")" && pwd)

@@ -2,6 +2,7 @@
 # Install crap4sol by symlinking <repo>/bin/crap4sol into a directory on PATH.
 # Usage: ./install.sh [target-dir]   (default: $HOME/.local/bin)
 set -eu
+unset CDPATH  # an exported CDPATH would redirect (and echo) relative cd
 
 repo=$(cd -P "$(dirname "$0")" && pwd)
 target=${1:-$HOME/.local/bin}
@@ -9,6 +10,9 @@ case $target in
     /*) ;;
     *) target=$(pwd)/$target ;;
 esac
+while [ "$target" != / ] && [ "${target%/}" != "$target" ]; do
+    target=${target%/}  # so the PATH check matches "<dir>/" against "<dir>"
+done
 link=$target/crap4sol
 
 if [ -e "$link" ] && [ ! -L "$link" ]; then
