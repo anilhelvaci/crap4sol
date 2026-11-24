@@ -70,3 +70,12 @@ def test_readme_exit_three_covers_unexpected_internal_errors(text):
 
 def test_readme_mentions_via_ir(text):
     assert "via-IR" in text or "via_ir" in text
+
+
+def test_readme_notes_forge_clean_build_coverage_per_module(text):
+    # issue #5: users must know crap4sol wipes out/ and cache/ before coverage
+    assert "forge clean && forge build && forge coverage" in text
+
+
+def test_readme_warns_out_and_cache_are_wiped(text):
+    assert "out/" in text and "cache/" in text

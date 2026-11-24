@@ -311,6 +311,24 @@ def test_compile_error_exits_three(sample, capsys):
     assert out == ""
 
 
+def test_compile_error_names_forge_build(sample, capsys):
+    # issue #5: forge build runs before forge coverage, so a compile error fails at build
+    (sample / "src" / "Broken.sol").write_text("pragma solidity ^0.8.20;\ncontract Broken {\n")
+    assert call([]) == 3
+    _, err = capsys.readouterr()
+    assert "forge build failed" in err
+
+
+def test_run_cleans_stale_build_artifacts(sample, capsys):
+    # issue #5: forge clean runs first, wiping out/ and cache/ leftovers
+    for d in ("out", "cache"):
+        (sample / d).mkdir(exist_ok=True)
+        (sample / d / "stale-marker.txt").write_text("stale")
+    call([])
+    assert not (sample / "out" / "stale-marker.txt").exists()
+    assert not (sample / "cache" / "stale-marker.txt").exists()
+
+
 # --- console script -------------------------------------------------------------------
 
 
