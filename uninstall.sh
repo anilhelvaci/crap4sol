@@ -7,7 +7,10 @@ unset CDPATH  # an exported CDPATH would redirect (and echo) relative cd
 # print the physical path a (possibly symlinked) file resolves to; fail if it doesn't exist
 resolve() {
     f=$1
+    hops=0
     while [ -L "$f" ]; do
+        hops=$((hops + 1))
+        [ "$hops" -le 40 ] || return 1  # symlink cycle
         dir=$(cd -P "$(dirname "$f")" && pwd) || return 1
         l=$(readlink "$f")
         case $l in
@@ -19,7 +22,10 @@ resolve() {
     echo "$(cd -P "$(dirname "$f")" && pwd)/$(basename "$f")"
 }
 
-launcher=$(resolve "$(dirname "$0")/bin/crap4sol")
+launcher=$(resolve "$(dirname "$0")/bin/crap4sol") || {
+    echo "uninstall.sh: cannot find this checkout's bin/crap4sol next to $0" >&2
+    exit 1
+}
 target=${1:-$HOME/.local/bin}
 link=$target/crap4sol
 
