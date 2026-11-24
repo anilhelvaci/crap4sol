@@ -16,4 +16,6 @@ if ! command -v uv >/dev/null 2>&1; then
     echo "crap4sol: uv not found on PATH; install it: https://docs.astral.sh/uv/getting-started/installation/" >&2
     exit 3
 fi
-exec uv run --quiet --project "$repo" crap4sol "$@"
+# sync first so a uv/env failure exits 3 (analysis failure), never uv's own code
+uv sync --quiet --project "$repo" || exit 3
+exec uv run --no-sync --quiet --project "$repo" crap4sol "$@"

@@ -35,7 +35,7 @@ case ":${PATH:-}:" in
     *":$target:"*) ;;
     *)
         echo "$target is not on PATH; add it, e.g. in your shell profile:"
-        echo "  export PATH=$target:\$PATH"
+        echo "  export PATH=\"$target:\$PATH\""
         ;;
 esac
 echo "Try: crap4sol --help"
