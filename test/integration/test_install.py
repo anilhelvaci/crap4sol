@@ -2,6 +2,7 @@
 from the checkout via `uv run --project`, keeping the caller's cwd and exit codes."""
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -15,6 +16,12 @@ FIXTURE = REPO / "test" / "fixtures" / "foundry-sample"
 SYS_PATH = "/usr/bin:/bin"  # neither uv nor forge lives here
 
 pytestmark = pytest.mark.skipif(shutil.which("uv") is None, reason="uv not on PATH")
+
+# tests that hide uv/forge by restricting PATH to SYS_PATH are void if SYS_PATH has them
+needs_bare_sys_path = pytest.mark.skipif(
+    any(shutil.which(t, path=SYS_PATH) for t in ("uv", "forge")),
+    reason=f"uv or forge found on {SYS_PATH}",
+)
 
 
 def run(argv, cwd, env=None, timeout=300):
@@ -122,6 +129,38 @@ def test_install_replaces_stale_symlink(tmp_path, env):
     assert (target / "crap4sol").resolve() == LAUNCHER.resolve()
 
 
+def test_install_replaces_dangling_symlink(tmp_path, env):
+    # old checkout deleted: the link is dangling but still ours to replace
+    target = tmp_path / "bin"
+    target.mkdir()
+    (target / "crap4sol").symlink_to(tmp_path / "gone" / "crap4sol")
+    p = install(target, tmp_path, env[0])
+    assert p.returncode == 0, p.stderr
+    assert (target / "crap4sol").resolve() == LAUNCHER.resolve()
+
+
+def test_install_relative_target_resolves_against_cwd(tmp_path, env):
+    cwd = tmp_path / "here"
+    cwd.mkdir()
+    p = install("rel/bin", cwd, env[0])
+    assert p.returncode == 0, p.stderr
+    link = cwd / "rel" / "bin" / "crap4sol"
+    assert link.is_symlink()
+    assert link.resolve() == LAUNCHER.resolve()
+    # PATH hint must be usable from any dir: absolute target
+    assert re.search(rf'export PATH="?{re.escape(str(cwd / "rel" / "bin"))}:', p.stdout + p.stderr)
+
+
+def test_install_uv_sync_failure_fails_without_link(tmp_path, env):
+    e, _ = env
+    fake_bin(tmp_path / "tools", "uv", "echo sync-boom >&2; exit 2")
+    target = tmp_path / "bin"
+    p = install(target, tmp_path, e)
+    assert p.returncode != 0
+    assert "sync-boom" in p.stderr
+    assert not (target / "crap4sol").is_symlink()
+
+
 def test_install_refuses_to_overwrite_regular_file(tmp_path, env):
     target = tmp_path / "bin"
     target.mkdir()
@@ -170,7 +209,7 @@ def test_install_warns_when_target_not_on_path(tmp_path, env):
     target = tmp_path / "bin"
     p = install(target, tmp_path, env[0])
     assert p.returncode == 0, p.stderr
-    assert f"export PATH={target}:" in p.stdout + p.stderr
+    assert re.search(rf'export PATH="?{re.escape(str(target))}:', p.stdout + p.stderr)
 
 
 def test_install_no_path_warning_when_target_on_path(tmp_path, env):
@@ -182,23 +221,32 @@ def test_install_no_path_warning_when_target_on_path(tmp_path, env):
     assert "export PATH=" not in p.stdout + p.stderr
 
 
+def warned(p, tmp_path, tool) -> bool:
+    return any(
+        "warning" in l.lower() and re.search(rf"\b{tool}\b", l)
+        for l in msgs(p, tmp_path).splitlines()
+    )
+
+
+@needs_bare_sys_path
 def test_install_warns_but_succeeds_without_forge(tmp_path, env):
     e, _ = env
     tools = tmp_path / "tools"
     (tools / "forge").unlink()
     p = install(tmp_path / "bin", tmp_path, {**e, "PATH": f"{tools}:{SYS_PATH}"})
     assert p.returncode == 0, p.stderr
-    assert "forge" in msgs(p, tmp_path)
+    assert warned(p, tmp_path, "forge")
     assert (tmp_path / "bin" / "crap4sol").resolve() == LAUNCHER.resolve()
 
 
+@needs_bare_sys_path
 def test_install_warns_but_succeeds_without_uv(tmp_path, env):
     e, _ = env
     tools = tmp_path / "tools"
     (tools / "uv").unlink()
     p = install(tmp_path / "bin", tmp_path, {**e, "PATH": f"{tools}:{SYS_PATH}"})
     assert p.returncode == 0, p.stderr
-    assert "uv" in msgs(p, tmp_path)
+    assert warned(p, tmp_path, "uv")
     assert (tmp_path / "bin" / "crap4sol").resolve() == LAUNCHER.resolve()
 
 
@@ -228,8 +276,9 @@ def linked(tmp_path):
 
 @pytest.fixture
 def work(tmp_path):
-    d = tmp_path / "work"
-    d.mkdir()
+    # deeper than bin/: a relative hop resolved against cwd instead of the link's dir breaks
+    d = tmp_path / "a" / "b" / "work"
+    d.mkdir(parents=True)
     return d
 
 
@@ -281,6 +330,7 @@ def test_launcher_keeps_cwd_and_passes_exit_three(linked, tmp_path):
     assert p.stdout == ""
 
 
+@needs_bare_sys_path
 def test_launcher_without_uv_exits_three_with_hint(linked, work, tmp_path):
     p = run([linked, "--help"], work, {**os.environ, "PATH": SYS_PATH})
     assert p.returncode == 3
@@ -299,3 +349,18 @@ def test_launcher_e2e_on_fixture_reports_and_exits_two(linked, tmp_path):
     assert "classify(uint256)" in p.stdout
     assert "CRAP threshold exceeded: 30.0 > 8.0" in p.stderr
     assert (dst / "lcov.info").is_file()  # coverage ran in the caller's project
+
+
+def test_launcher_uv_env_failure_exits_three_not_uv_code(linked, work, tmp_path):
+    # uv itself fails before crap4sol starts (fresh env, offline, empty cache): its own
+    # exit code (1/2) must not masquerade as crap4sol's usage error / threshold exit
+    e = {
+        **os.environ,
+        "UV_OFFLINE": "1",
+        "UV_CACHE_DIR": str(tmp_path / "empty-cache"),
+        "UV_PROJECT_ENVIRONMENT": str(tmp_path / "fresh-venv"),
+    }
+    p = run([linked, "--help"], work, e)
+    assert p.returncode == 3, p.stdout + p.stderr
+    assert p.stdout == ""
+    assert "usage: crap4sol" not in p.stderr
