@@ -320,13 +320,15 @@ def test_compile_error_names_forge_build(sample, capsys):
 
 
 def test_run_cleans_stale_build_artifacts(sample, capsys):
-    # issue #5: forge clean runs first, wiping out/ and cache/ leftovers
-    for d in ("out", "cache"):
-        (sample / d).mkdir(exist_ok=True)
-        (sample / d / "stale-marker.txt").write_text("stale")
+    # issue #5: forge clean runs first, wiping out/ and clearing forge's build cache
+    (sample / "out").mkdir(exist_ok=True)
+    (sample / "out" / "stale-marker.txt").write_text("stale")
+    (sample / "cache").mkdir(exist_ok=True)
+    stale_cache = sample / "cache" / "solidity-files-cache.json"
+    stale_cache.write_text('{"stale": true}')
     call([])
     assert not (sample / "out" / "stale-marker.txt").exists()
-    assert not (sample / "cache" / "stale-marker.txt").exists()
+    assert not stale_cache.exists() or stale_cache.read_text() != '{"stale": true}'
 
 
 # --- console script -------------------------------------------------------------------

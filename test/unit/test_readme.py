@@ -79,3 +79,8 @@ def test_readme_notes_forge_clean_build_coverage_per_module(text):
 
 def test_readme_warns_out_and_cache_are_wiped(text):
     assert "out/" in text and "cache/" in text
+
+
+def test_readme_says_forge_clean_clears_build_cache(text):
+    # forge clean clears the build cache (solidity-files-cache.json), not all of cache/
+    assert "build cache" in text.lower()

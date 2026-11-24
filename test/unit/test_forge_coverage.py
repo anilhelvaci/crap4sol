@@ -297,7 +297,8 @@ def test_runner_oserror_message_names_forge_and_module(module):
 
     with pytest.raises(AnalysisError) as ei:
         run_coverage(module, runner=missing)
-    assert "forge coverage" in str(ei.value)
+    # issue #5: an always-raising runner fails at the first step, forge clean
+    assert "forge clean" in str(ei.value)
     assert str(module) in str(ei.value)
 
 
