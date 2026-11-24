@@ -104,3 +104,7 @@ def test_readme_install_script_comes_before_uv_tool_install(text):
 
 def test_readme_install_mentions_git_pull_upgrade(text):
     assert "git pull" in _section(text, "## Install")
+
+
+def test_readme_install_mentions_uninstall_script(text):
+    assert "./uninstall.sh" in _section(text, "## Install")

@@ -364,3 +364,50 @@ def test_launcher_uv_env_failure_exits_three_not_uv_code(linked, work, tmp_path)
     assert p.returncode == 3, p.stdout + p.stderr
     assert p.stdout == ""
     assert "usage: crap4sol" not in p.stderr
+
+
+# --- review follow-ups: invocation forms, CDPATH, PATH normalization -------------------
+
+
+def test_launcher_direct_invocation_without_symlink(work):
+    p = run([LAUNCHER, "--help"], work)
+    assert p.returncode == 0, p.stderr
+    assert p.stdout.startswith("usage: crap4sol")
+
+
+def test_launcher_relative_invocation_ignores_cdpath(tmp_path):
+    # exported CDPATH with a decoy `bin/`: `cd bin` must not jump there (or echo its path)
+    (tmp_path / "decoy" / "bin").mkdir(parents=True)
+    e = {**os.environ, "CDPATH": str(tmp_path / "decoy")}
+    p = run(["bin/crap4sol", "--help"], REPO, e)
+    assert p.returncode == 0, p.stderr
+    assert p.stdout.startswith("usage: crap4sol")
+
+
+def test_install_relative_invocation_ignores_cdpath(tmp_path, env):
+    # `sh <checkout>/install.sh` from the checkout's parent with a decoy of the same name on CDPATH
+    (tmp_path / "decoy" / REPO.name / "bin").mkdir(parents=True)
+    e = {**env[0], "CDPATH": str(tmp_path / "decoy")}
+    target = tmp_path / "bin"
+    p = run(["sh", f"{REPO.name}/install.sh", target], REPO.parent, e)
+    assert p.returncode == 0, p.stderr
+    assert (target / "crap4sol").resolve() == LAUNCHER.resolve()
+
+
+def test_install_refuses_checkout_own_bin(tmp_path, env):
+    # installing into <repo>/bin would replace the launcher with a link to itself
+    before = LAUNCHER.read_bytes()
+    p = install(REPO / "bin", tmp_path, env[0])
+    assert p.returncode == 1
+    assert not LAUNCHER.is_symlink()
+    assert LAUNCHER.read_bytes() == before
+
+
+def test_install_trailing_slash_target_on_path_no_hint(tmp_path, env):
+    e, _ = env
+    target = tmp_path / "bin"
+    e = {**e, "PATH": f"{target}:{e['PATH']}"}
+    p = install(f"{target}/", tmp_path, e)
+    assert p.returncode == 0, p.stderr
+    assert (target / "crap4sol").resolve() == LAUNCHER.resolve()
+    assert "export PATH=" not in p.stdout + p.stderr
