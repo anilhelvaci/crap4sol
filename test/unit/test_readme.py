@@ -84,3 +84,23 @@ def test_readme_warns_out_and_cache_are_wiped(text):
 def test_readme_says_forge_clean_clears_build_cache(text):
     # forge clean clears the build cache (solidity-files-cache.json), not all of cache/
     assert "build cache" in text.lower()
+
+
+# --- issue #6: clone + install.sh is the primary install path ---------------------------
+
+
+def test_readme_install_shows_clone_and_install_script(text):
+    section = _section(text, "## Install")
+    assert "git clone" in section
+    assert "./install.sh" in section
+
+
+def test_readme_install_script_comes_before_uv_tool_install(text):
+    # install.sh is primary; `uv tool install .` kept as the alternative
+    section = _section(text, "## Install")
+    assert "uv tool install ." in section
+    assert section.index("./install.sh") < section.index("uv tool install .")
+
+
+def test_readme_install_mentions_git_pull_upgrade(text):
+    assert "git pull" in _section(text, "## Install")
