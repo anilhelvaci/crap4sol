@@ -43,6 +43,8 @@ crap4sol --help
   `*.s.sol` files.
 - Files are grouped by module: the nearest ancestor holding `foundry.toml`, bounded by the
   project root. `forge coverage` and Slither run once per module.
+- Per module crap4sol runs `forge clean && forge build && forge coverage`. **`forge clean` wipes
+  the module's `out/` and `cache/` directories.** A compile error fails at `forge build` (exit `3`).
 - An empty selection prints `No Solidity files to analyze.` and exits `0`.
 - `--coverage branch` is not implemented yet: it prints `Branch coverage not implemented yet.`
   to stderr and exits `1`.
